@@ -158,8 +158,9 @@ async function load_initial_data() {
                   var now = moment();
                   var route_schedule = await wmata_api('/Bus.svc/json/jRouteSchedule', { RouteID: route }, true);
                   var runs = route_schedule["Direction" + direction_num];
-                  if (!runs)
+                  if (!runs || runs.length == 0)
                     return null; // no schedule for today?
+                  var avg_duration = 0;
                   for (let j = 0; j < runs.length; j++) {
                     // Find the start and end stops on this run.
                     let run = runs[j].StopTimes;
@@ -177,14 +178,15 @@ async function load_initial_data() {
                     // TODO: How are LOOP routes handled where the end might be before the start?
 
                     var start_time = moment.tz(run[start_stop_index].Time, "America/New_York");
-                    if (start_time.diff(now) > 0) {
-                      var end_time = moment.tz(run[end_stop_index].Time, "America/New_York");
-                      return end_time.diff(start_time, "minutes");
-                    }
+                    var end_time = moment.tz(run[end_stop_index].Time, "America/New_York");
+                    var d = end_time.diff(start_time, "minutes");
+                    avg_duration += d;
+                    if (start_time.diff(now) > 0)
+                      return d;
                   }
 
-                  // Found no helpful schedule data.
-                  return null;
+                  // Found no future scheduled data, so use average.
+                  return d / runs.length;
                 },
                 get_predictions: async function(stop, end_stop, cached_predictions) {
                   if (!(stop.raw.StopID in cached_predictions))
@@ -267,10 +269,15 @@ async function iterate_stop_pairs_by_distance(start, end, cb) {
         );
     }
 
+    // If the total walking time is more than 40 minutes, stop iterations,
+    // those are useless directions.
+    if (walking_time(start, start_stop.coord) + walking_time(end, end_stop.coord) > 40)
+      return;
+
     // Take this pair. Call the callback with this pair.
-    // If the callback returns false, stop iterating.
+    // If the callback returns true, stop iterating.
     var dist = total_distance(start_stop, end_stop);
-    if (!await cb(start_stop, end_stop))
+    if (await cb(start_stop, end_stop))
       return;
 
     // If there are no more end stops for this start stop, cycle to
@@ -315,31 +322,68 @@ async function compute_routes(start, end) {
   var seen_routes = { };
   var trips = [];
 
-  await iterate_stop_pairs_by_distance(start, end, async function(start_stop, end_stop) {
-    // If the total walking time is more than 40 minutes, stop iterations,
-    // those are useless directions.
-    if (walking_time(start, start_stop.coord) + walking_time(end, end_stop.coord) > 40)
-      return false;
+  // Compute no-transfer routes.
 
+  await iterate_stop_pairs_by_distance(start, end, async function(start_stop, end_stop) {
     // Are these stops on any of the same routes?
     for (let i = 0; i < start_stop.routes.length; i++)
       for (let j = 0; j < end_stop.routes.length; j++)
         if (start_stop.routes[i].id == end_stop.routes[j].id)
-          await try_start_stop_route(start_stop, end_stop, start_stop.routes[i]);
-    return true;
+          await try_start_stop_route(start_stop, end_stop, start_stop.routes[i], trips);
   });
 
-  async function try_start_stop_route(start_stop, end_stop, route) {
+  // Find the maximum trip time.
+  var max_trip_time = 0;
+  trips.forEach(function(trip) {
+    if (trip.total_time > max_trip_time)
+      max_trip_time = trip.total_time;
+  })
+
+  // Find one-transfer routes.
+  await iterate_stop_pairs_by_distance(start, end, async function(start_stop, end_stop) {
+    if (end_stop.type != "wmata_rail") return true; // only transfer for rail
+    var sorted_transfer_stops = station_stops.filter(function(stop) { return stop.type == "wmata_rail"; });
+    function comparer(a, b) {
+      a = simple_distance_squared(a.coord, start_stop.coord) + simple_distance_squared(a.coord, end_stop.coord);
+      b = simple_distance_squared(b.coord, start_stop.coord) + simple_distance_squared(b.coord, end_stop.coord);
+      return a - b;
+    }
+    sorted_transfer_stops = sorted_transfer_stops.slice(0).sort(comparer); // clone then sort in place and return it
+    for (var m = 0; m < sorted_transfer_stops.length; m++) {
+      // Does any third stop occur on routes that connect both
+      // the start and end?
+      if (m > 50) break;
+      for (let i = 0; i < start_stop.routes.length; i++)
+        for (let j = 0; j < sorted_transfer_stops[m].routes.length; j++)
+          if (start_stop.routes[i].id == sorted_transfer_stops[m].routes[j].id)
+            for (let k = 0; k < end_stop.routes.length; k++)
+              for (let l = 0; l < sorted_transfer_stops[m].routes.length; l++)
+                if (end_stop.routes[k].id == sorted_transfer_stops[m].routes[l].id) {
+                  var trip = await try_start_transfer_stop_route(start_stop, start_stop.routes[i], sorted_transfer_stops[m], end_stop, end_stop.routes[k]);
+                  if (trip) {
+                    if (trip.total_time > max_trip_time)
+                      return true; // this is too long, stop
+                    trips.push(trip);
+                  }
+                }
+    }
+  });
+
+
+  async function try_start_stop_route(start_stop, end_stop, route, trips) {
     // Although they are on the same routes, they could be
     // on different directions of the route, or the end stop
     // could precede the start stop (except on a LOOP-directed
     // route, the order does not matter).
+    var found = false;
     var directions = await route.getDirectionsMetadata();
     for (var i = 0; i < directions.length; i++)
-      await try_start_stop_route_direction(start_stop, end_stop, directions[i]);
+      if (await try_start_stop_route_direction(start_stop, end_stop, directions[i], trips))
+        found = true;
+    return found;
   }
 
-  async function try_start_stop_route_direction(start_stop, end_stop, direction) {
+  async function try_start_stop_route_direction(start_stop, end_stop, direction, trips) {
     // Check that the stops are on the route and they are in the order
     // the vehicle is going.
     if (direction.stops) {
@@ -375,14 +419,40 @@ async function compute_routes(start, end) {
       return;
 
     // Add this trip.
+    var start_walking_time = walking_time(start, start_stop.coord) + start_stop.time_to_enter_and_exit;
+    var end_walking_time = walking_time(end, end_stop.coord) + end_stop.time_to_enter_and_exit;
     trips.push({
       route: direction,
       start_stop: start_stop,
       end_stop: end_stop,
-      start_walking_time: walking_time(start, start_stop.coord) + start_stop.time_to_enter_and_exit,
-      end_walking_time: walking_time(end, end_stop.coord) + end_stop.time_to_enter_and_exit,
+      start_walking_time: start_walking_time,
+      end_walking_time: end_walking_time,
       transit_time: duration,
+      total_time: start_walking_time + duration + end_walking_time,
     });
+
+    return true;
+  }
+
+  async function try_start_transfer_stop_route(start_stop, start_route, transfer_stop, end_stop, end_route) {
+    var trips1 = [];
+    await try_start_stop_route(start_stop, transfer_stop, start_route, trips1);
+
+    var trips2 = [];
+    await try_start_stop_route(transfer_stop, end_stop, end_route, trips2);
+
+    if (trips1.length > 0 && trips2.length > 0) {
+      return {
+        route: trips1[0].route,
+        start_stop: start_stop,
+        end_stop: end_stop,
+        transfer_stop: transfer_stop,
+        start_walking_time: trips1[0].start_walking_time,
+        end_walking_time: trips2[0].end_walking_time,
+        transit_time: trips1[0].transit_time+trips2[0].transit_time,
+        total_time: trips1[0].total_time + trips2[0].total_time,
+      };
+    }
   }
 
   return trips;
@@ -396,7 +466,7 @@ async function get_trip_predictions(trips) {
   for (var i = 0; i < trips.length; i++) {
     // Get the next bus at the start.
     var trip = trips[i];
-    var preds = await trip.route.get_predictions(trip.start_stop, trip.end_stop, cached_predictions);
+    var preds = await trip.route.get_predictions(trip.start_stop, trip.transfer_stop || trip.end_stop, cached_predictions);
     var added_any_runs = false;
     preds.forEach(function(pred) {
       // Skip if the user can't walk there in time. Add an extra
@@ -410,6 +480,7 @@ async function get_trip_predictions(trips) {
       trip_runs.push({
         route_name: pred.name || trip.route.name,
         stop: trip.start_stop,
+        transfer_stop: trip.transfer_stop,
         end_stop: trip.end_stop,
         prediction: pred.time,
         time_to_spare: pred.time - trip.start_walking_time,
@@ -425,6 +496,7 @@ async function get_trip_predictions(trips) {
       trip_runs.push({
         route_name: trip.route.name,
         stop: trip.start_stop,
+        transfer_stop: trip.transfer_stop,
         end_stop: trip.end_stop,
         total_time: trip.start_walking_time + trip.transit_time + trip.end_walking_time,
         total_walking_time: trip.start_walking_time + trip.end_walking_time,
@@ -450,7 +522,7 @@ async function do_demo() {
                 "a", trip.route_name,
                 "is arriving in", trip.prediction, "minutes",
                 //"(that's", parseInt(trip.time_to_spare), "minutes to spare)",
-                "(get off at", trip.end_stop.name, ")",
+                "(" + (trip.transfer_stop ? "transfer at " + trip.transfer_stop.name + " and " : "") + "get off at", trip.end_stop.name, ")",
                 "with an ETA of", parseInt(trip.total_time), "minutes",
                 "(" + parseInt(trip.total_walking_time), "min. walking)",
                 );
