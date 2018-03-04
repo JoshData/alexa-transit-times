@@ -27,8 +27,10 @@
   "homepage": "https://github.com/joshdata/alexa-transit-times#readme",
   "dependencies": {
     "async": "^2.6.0",
+    "async-disk-cache": "^1.3.3",
     "geodist": "^0.2.1",
     "moment": "^2.21.0",
-    "moment-timezone": "^0.5.14"
+    "moment-timezone": "^0.5.14",
+    "point-line-distance": "^1.0.0"
   }
 }
