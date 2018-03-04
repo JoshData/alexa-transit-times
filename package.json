@@ -1,0 +1,34 @@
+{
+  "name": "alexa-transit-times",
+  "version": "1.0.0",
+  "description": "An Alexa skill to get public transit information for your commute and regular trips, supporting WMATA Metro and Bus\"",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/joshdata/alexa-transit-times.git"
+  },
+  "keywords": [
+    "alexa",
+    "skill",
+    "public",
+    "transit",
+    "wmata",
+    "metro",
+    "bus"
+  ],
+  "author": "Joshua Tauberer",
+  "license": "GPL-3.0",
+  "bugs": {
+    "url": "https://github.com/joshdata/alexa-transit-times/issues"
+  },
+  "homepage": "https://github.com/joshdata/alexa-transit-times#readme",
+  "dependencies": {
+    "async": "^2.6.0",
+    "geodist": "^0.2.1",
+    "moment": "^2.21.0",
+    "moment-timezone": "^0.5.14"
+  }
+}
