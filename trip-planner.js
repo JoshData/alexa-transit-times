@@ -256,7 +256,10 @@ async function load_wmata_metro_bus() {
             getEstimatedTripTime: async function(start_stop, end_stop) {
               // Compute the total transit time. Use schedule data for today to find the next trip.
               var now = moment();
-              var route_schedule = await wmata_api('/Bus.svc/json/jRouteSchedule', { RouteID: route }, true);
+              var route_schedule = await wmata_api('/Bus.svc/json/jRouteSchedule', {
+                RouteID: route,
+                Date: moment().format("YYYY-MM-DD"),
+              }, true);
               var runs = route_schedule["Direction" + direction_num];
               if (!runs || runs.length == 0)
                 return null; // no schedule for today?
@@ -617,6 +620,11 @@ async function compute_routes(start, end) {
 }
 
 async function get_trip_predictions(trips) {
+  // TODO: The trip's total_time and transit_time are based on
+  // schedule data when the trips were computed. Maybe update
+  // them with current schedule data since travel times change
+  // depending on when they occur.
+
   // For each trip, explode it into copies for each next transit
   // prediction time.
   var cached_predictions = { };
