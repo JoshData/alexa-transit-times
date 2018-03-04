@@ -3,15 +3,21 @@ const momenttz = require("moment-timezone");
 const geodist = require('geodist')
 const point_line_distance = require('point-line-distance');
 
-// Load WMATA API key.
+// Load API keys.
 const fs = require("fs");
-var api_key = fs.readFileSync('wmata_api_key.txt').toString("ascii").replace(/[\r\n]*$/, "");
+var api_keys = { };
+fs.readFileSync('api_keys.txt').toString("ascii").split(/[\r\n]+/g).forEach(function(line) {
+  line = line.split(/=/);
+  if (line[0])
+    api_keys[line[0]] = line[1];
+});
 
-// Generic helper to call WMATA API.
+// Generic helper to call WMATA and Geocod.io APIs.
+
 var web_request_mem_cache = { };
 var web_request_disk_cache = require('async-disk-cache');
 web_request_disk_cache = new web_request_disk_cache('trip-planner');
-function web_request(host, path, qs, cache) {
+function web_request(host, path, qs, headers, cache) {
   return new Promise(function(resolve, reject) {
     const https = require('https');
     const querystring = require('querystring');
@@ -34,9 +40,7 @@ function web_request(host, path, qs, cache) {
       https.get({
         host: host,
         path: path,
-        headers: {
-          api_key: api_key
-        }
+        headers: headers,
       }, (res) => {
         console.log(">", path, res.statusCode);
         var body = '';
@@ -59,7 +63,11 @@ function web_request(host, path, qs, cache) {
 }
 
 function wmata_api(path, qs, cache) {
-  return web_request('api.wmata.com', path, qs, cache)
+  return web_request('api.wmata.com', path, qs, { api_key: api_keys['wmata'] }, cache)
+}
+
+function geocode(q) {
+  return web_request("api.geocod.io", "/v1.2/geocode", { q: q, api_key: api_keys['geocodio'] });
 }
 
 // Global route data.
@@ -569,6 +577,8 @@ async function compute_routes(start, end) {
     // than taking transit between them.
     var start_walking_time = walking_time(start, start_stop.coord) + start_stop.time_to_enter_and_exit;
     var end_walking_time = walking_time(end, end_stop.coord) + end_stop.time_to_enter_and_exit;
+    if (duration < 5)
+      return null; // don't bother taking transit for less than 3 minutes
     if (walking_time(start_stop.coord, end_stop.coord) < (start_walking_time + end_walking_time)/2)
       return null;
 
@@ -668,9 +678,23 @@ async function get_trip_predictions(trips) {
 
 
 async function do_demo() {
-  //var trips = await compute_routes([38.9325711,-77.0329266], [38.90052704015674,-77.0422745260422]);
-  //var trips = await compute_routes([38.8953272,-77.02106850000001], [38.8958052,-77.07190789999999]);
-  var trips = await compute_routes([38.8953272,-77.02106850000001], [38.900563,-77.042426]);
+  var addr1 = process.argv[2];
+  var addr2 = process.argv[3];
+
+  var start = await geocode(addr1);
+  var end = await geocode(addr2);
+
+  start = {
+    name: start.results[0].formatted_address,
+    coord: [start.results[0].location.lat, start.results[0].location.lng],
+  }
+
+  end = {
+    name: end.results[0].formatted_address,
+    coord: [end.results[0].location.lat, end.results[0].location.lng],
+  }
+
+  var trips = await compute_routes(start.coord, end.coord);
   trips = await get_trip_predictions(trips);
 
   trips.forEach(function(trip) {
