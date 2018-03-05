@@ -87,14 +87,20 @@ function add_user_trip(request, trip) {
   storage.setItemSync(key, user);
 }
 
-app.launch(function(request, response) {
+function app_launch_handler(request, response) {
   var trips = get_user_trips(request);
   if (trips.length == 0)
-    response.say("Start by adding a trip. For instance, say 'add trip named work' to get started.");
+    response.say("Start by adding a trip. For instance, say 'add a trip named work' to get started.");
   else
-    response.say("You have " + trips.length + " trip" + (trips.length != 1 ? "s" : "") + " stored. You can add a trip or list trips.")
+    response.say(
+        "You have " + trips.length + " trip" + (trips.length != 1 ? "s" : "") + " stored. "
+      + "You can add list trips, get next transit times by saying check get times to " + trips[0].name + " or check times to " + trips[0].name + ". "
+      + "To add a trip, say 'add a trip named' and give it a name. "
+      + "Say stop or cancel to exit this skill.")
   response.shouldEndSession(false);
-});
+}
+
+app.launch(app_launch_handler);
 
 app.intent("times_from_addresses", {
     "slots": {
@@ -226,6 +232,44 @@ app.intent("do_trip", {
     response.say("You don't have a trip named " + trip_name + ".");
   }
 );
+
+app.intent("explain_trip", {
+    "slots": {
+      "name": "AMAZON.LITERAL",
+    },
+    "utterances": ["what is {-|trip_name}"]
+  },
+  async function(request, response) {
+    request.getSession().clear("add_trip");
+    response.shouldEndSession(false);
+
+    // Is this name the name of a trip?
+    var trip_name = request.slot("trip_name");
+    var trips = get_user_trips(request);
+    for (var i = 0; i < trips.length; i++) {
+      if (trips[i].name == trip_name) {
+        response.say(trip_name + " is your trip from "
+          + trips[i].start.name + " to " + trips[i].end.name + ".");
+        return;
+      }
+    }
+    
+    response.say("You don't have a trip named " + trip_name + ".");
+  }
+);
+
+async function stop_cancel_intent_handler(request, response) {
+  if (request.getSession().get("add_trip")) {
+    request.getSession().clear("add_trip");
+    app_launch_handler(request, response);
+    return;
+  }
+
+  response.say("Doors closing!");
+}
+
+app.intent("AMAZON.StopIntent", { }, stop_cancel_intent_handler);
+app.intent("AMAZON.CancelIntent", { }, stop_cancel_intent_handler);
 
 // setup the alexa app and attach it to express before anything else
 app.express({ expressApp: express_app }); 
