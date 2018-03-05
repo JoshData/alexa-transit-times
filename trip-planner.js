@@ -3,6 +3,8 @@ const momenttz = require("moment-timezone");
 const geodist = require('geodist')
 const point_line_distance = require('point-line-distance');
 
+const shallow_clone = function(obj) { return Object.assign({}, obj); }
+
 // Load API keys.
 const fs = require("fs");
 var api_keys = { };
@@ -83,6 +85,7 @@ function geocode(q) {
 
 // Global route data.
 all_station_stops = null;
+all_station_stops_by_id = null;
 all_routegroups = null;
 all_station_stops_by_routegroup_pairs = null;
 route_handlers = { };
@@ -92,6 +95,12 @@ async function load_initial_data() {
   all_routegroups = { };
   await load_wmata_metro_rail();
   await load_wmata_metro_bus();
+
+  // Index stops by id.
+  all_station_stops_by_id = { };
+  all_station_stops.forEach(function(stop) {
+    all_station_stops_by_id[stop.id] = stop;
+  });
 
   // Index stops by the pairs of routes they have, for transfers.
   all_station_stops_by_routegroup_pairs = {};
@@ -106,6 +115,11 @@ async function load_initial_data() {
       });
     });
   });
+}
+
+function getRouteFromId(routeid) {
+  var rp = routeid.split(/:/);
+  return route_handlers[rp[0]].getRoute(routeid);
 }
 
 function getRouteStops(route) {
@@ -190,20 +204,27 @@ async function load_wmata_metro_rail() {
       getRoutes: async function() {
         // Return one direction for each line. We'll filter when we do
         // predictions to ensure we go the right way.
-        return [{
-          id: "wmata_rail:" + line,
-          name: line_names[line],
-          modality: 'wmata_rail',
-          line: line,
-        }];
+        return [await get_route_from_id("wmata_rail:" + line)];
       },
     };
 
     return id;
   }
 
+  async function get_route_from_id(route_id) {
+    route_id = route_id.split(/:/);
+    var line = route_id[1];
+    return {
+      id: "wmata_rail:" + line,
+      name: line_names[line],
+      modality: 'wmata_rail',
+      line: line,
+    }
+  }
+
   route_handlers['wmata_rail'] = {
-    getStops: async function() { return null }, // assume all stations are on all runs
+    getRoute: get_route_from_id,
+    getStops: async function(route) { return null }, // assume all stations are on all runs
     getEstimatedTripTime: async function(route, start_stop, end_stop) {
       var info = await wmata_api('/Rail.svc/json/jSrcStationToDstStationInfo', { FromStationCode: start_stop.raw.StationCode1, ToStationCode: end_stop.raw.StationCode1 }, true);
       if (!info.StationToStationInfos) return null;
@@ -311,18 +332,10 @@ async function load_wmata_metro_bus() {
       getRoutes: async function() {
         var routedata = await wmata_api('/Bus.svc/json/jRouteDetails', { RouteID: route }, true);
         var directions = [];
-        function make_direction(direction_num, direction) {
-          if (direction == null) return; // a route can have either of its directions be null
-          directions.push({
-            id: "wmata_bus:" + routedata.RouteID + ":" + direction_num,
-            name: routedata.RouteID + " bus going " + direction.DirectionText + " toward " + direction.TripHeadsign,
-            modality: 'wmata_bus',
-            routeid: routedata.RouteID,
-            direction_num: direction_num,
-          });
-        }
-        make_direction("0", routedata.Direction0);
-        make_direction("1", routedata.Direction1);
+        if (routedata.Direction0)
+          directions.push(await get_route_from_id("wmata_bus:" + routedata.RouteID + ":" + "0"))
+        if (routedata.Direction1)
+          directions.push(await get_route_from_id("wmata_bus:" + routedata.RouteID + ":" + "1"))
         return directions;
       },
     };
@@ -330,7 +343,23 @@ async function load_wmata_metro_bus() {
     return id;
   }
 
+  async function get_route_from_id(route_id) {
+    route_id = route_id.split(/:/g);
+    var routeid = route_id[1];
+    var direction_num = route_id[2];
+    var routedata = await wmata_api('/Bus.svc/json/jRouteDetails', { RouteID: routeid }, true);
+    var direction = routedata['Direction' + direction_num];
+    return {
+      id: "wmata_bus:" + routeid + ":" + direction_num,
+      name: routedata.RouteID + " bus going " + direction.DirectionText + " toward " + direction.TripHeadsign,
+      modality: 'wmata_bus',
+      routeid: routedata.RouteID,
+      direction_num: direction_num,
+    };
+  }
+
   route_handlers['wmata_bus'] = {
+    getRoute: get_route_from_id,
     getStops: async function(route) {
       var routedata = await wmata_api('/Bus.svc/json/jRouteDetails', { RouteID: route.routeid }, true);
       var direction = routedata["Direction" + route.direction_num];
@@ -667,9 +696,9 @@ async function calculate_routes(start, end) {
 
     // Add this trip.
     return {
-      route: route,
-      start_stop: start_stop,
-      end_stop: end_stop,
+      route: route.id,
+      start_stop: start_stop.id,
+      end_stop: end_stop.id,
       start_walking_time: start_walking_time,
       walking_time: start_walking_time+end_walking_time,
       transit_time: duration,
@@ -684,9 +713,9 @@ async function calculate_routes(start, end) {
     if (trip1 && trip2) {
       return {
         route: trip1.route,
-        start_stop: start_stop,
-        end_stop: end_stop,
-        transfer_stop: transfer_stop,
+        start_stop: start_stop.id,
+        end_stop: end_stop.id,
+        transfer_stop: transfer_stop.id,
         transfer_route: trip2.route,
         start_walking_time: trip1.start_walking_time,
         walking_time: trip1.walking_time + trip2.walking_time,
@@ -710,8 +739,17 @@ async function get_trip_predictions(trips) {
   var cached_predictions = { };
   var trip_runs = [];
   for (var i = 0; i < trips.length; i++) {
-    // Get the next bus at the start.
     var trip = trips[i];
+
+    // Expand the route, start_stop, end_stop, transfer_stop, and transfer_route
+    // which are IDs into their longer data structures.
+    trip.start_stop = all_station_stops_by_id[trip.start_stop];
+    trip.end_stop = all_station_stops_by_id[trip.end_stop];
+    trip.transfer_stop = all_station_stops_by_id[trip.transfer_stop];
+    trip.route = await getRouteFromId(trip.route);
+    trip.transfer_route = trip.transfer_route ? await getRouteFromId(trip.transfer_route) : null;
+
+    // Get the transit predictions at the start stop.
     var preds = await getRoutePredictions(trip.route, trip.start_stop, trip.transfer_stop || trip.end_stop, cached_predictions);
     var added_any_runs = false;
     preds.forEach(function(pred) {
@@ -723,32 +761,20 @@ async function get_trip_predictions(trips) {
 
       // Return this trip.
       added_any_runs = true;
-      trip_runs.push({
-        route_name: pred.name || trip.route.name,
-        stop: trip.start_stop,
-        transfer_stop: trip.transfer_stop,
-        transfer_route: trip.transfer_route,
-        end_stop: trip.end_stop,
-        prediction: pred.time,
-        time_to_spare: pred.time - trip.start_walking_time,
-        total_time: pred.time + trip.total_time - trip.start_walking_time,
-        walking_time: trip.walking_time,
-      });
+      var tp = shallow_clone(trip);
+      tp.route_name = pred.name || trip.route.name;
+      tp.arrival = pred.time;
+      tp.total_time = pred.time + trip.total_time - trip.start_walking_time;
+      trip_runs.push(tp);
     })
 
     // If no predictions are available, add any entry anyway
     // to let the user know we know there's a route but it
     // might not be available right now.
     if (!added_any_runs) {
-      trip_runs.push({
-        route_name: trip.route.name,
-        stop: trip.start_stop,
-        transfer_stop: trip.transfer_stop,
-        transfer_route: trip.transfer_route,
-        end_stop: trip.end_stop,
-        total_time: trip.total_time,
-        walking_time: trip.walking_time,
-      });
+      var tp = shallow_clone(trip);
+      tp.route_name = trip.route.name;
+      trip_runs.push(tp);
     }
   }
 
@@ -839,7 +865,7 @@ async function do_demo() {
   trips = await get_trip_predictions(trips);
 
   trips.forEach(function(trip) {
-    console.log("At", trip.stop.name,
+    console.log("At", trip.start_stop.name,
                 "a", trip.route_name,
                 "is arriving in", trip.prediction, "minutes",
                 //"(that's", parseInt(trip.time_to_spare), "minutes to spare)",
@@ -852,5 +878,5 @@ async function do_demo() {
 
 // Hmm, async...
 load_initial_data()
-//  .then(do_demo)
+  //.then(do_demo)
 

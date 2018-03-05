@@ -28,18 +28,19 @@ function say_predictions(tripinfo, response, options) {
   if (options.restate_addresses)
     text += " You asked for times for trips from " + tripinfo.start.name + " and going to " + tripinfo.end.name + ". ";
 
-  if (tripinfo.trips.length == 0) {
-    text += "I couldn't find any upcoming busses or trains.";
-  } else {
-    var count = 0;
-    for (var i = 0; i < tripinfo.trips.length; i++) {
-      var trip = tripinfo.trips[i];
-      if (typeof trip.prediction === "undefined") continue; // possible route but no upcoming vehicle
-      if (count > 3) continue;
-      text += ("At " + trip.stop.name + " a " + trip.route_name
-        + " is arriving in " + trip.prediction + " minutes. ");
-      count++;
-    }
+  var count = 0;
+  for (var i = 0; i < tripinfo.trips.length; i++) {
+    var trip = tripinfo.trips[i];
+    if (typeof trip.arrival === "undefined") continue; // possible route but no upcoming vehicle
+    if (count > 3) continue;
+    text += ("At " + trip.start_stop.name + " a " + trip.route_name
+      + " is arriving in " + trip.arrival + " minutes. ");
+    count++;
+  }
+
+  if (!count) {
+    response.say("I couldn't find any upcoming busses or trains.");
+    return;
   }
 
   response.say(text);
@@ -54,7 +55,6 @@ function get_user_trips(request) {
 }
 
 function add_user_trip(request, trip) {
-  console.log(request.userId, request)
   var key = 'user-' + request.userId;
   var user = storage.getItemSync(key);
   if (!user) user = { };
@@ -83,7 +83,7 @@ app.launch(function(request, response) {
   if (trips.length == 0)
     response.say("Start by adding a trip. For instance, say 'add trip named work' to get started.");
   else
-    response.say("You have " + trips.length + " trips stored. You can add a trip or list trips.")
+    response.say("You have " + trips.length + " trip" + (trips.length != 1 ? "s" : "") + " stored. You can add a trip or list trips.")
   response.shouldEndSession(false);
 });
 
@@ -220,6 +220,6 @@ app.intent("do_trip", {
 // setup the alexa app and attach it to express before anything else
 app.express({ expressApp: express_app }); 
 
-express_app.listen(3000, () => console.log('Example app listening on port 3000!'))
+express_app.listen(3000, () => console.log('App listening on port 3000!'))
 
-console.log(app.schemas.skillBuilder())
+//console.log(app.schemas.skillBuilder())
