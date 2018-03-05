@@ -497,9 +497,10 @@ async function iterate_stop_pairs_by_distance(start, end, cb) {
 
     // Take this pair. Call the callback with this pair.
     // If the callback returns true, stop iterating.
-    var dist = total_distance(start_stop, end_stop);
-    if (await cb(start_stop, end_stop))
-      return;
+    if (start_stop.group_id != end_stop.group_id) {
+      if (await cb(start_stop, end_stop))
+        return;
+    }
 
     // If there are no more end stops for this start stop, cycle to
     // the next start stop.
@@ -593,7 +594,8 @@ async function calculate_routes(start, end) {
         var pair = r1 + "__" + r2;
         if (pair in all_station_stops_by_routegroup_pairs)
           all_station_stops_by_routegroup_pairs[pair].forEach(function(stop) {
-            transfer_stops.push(stop);
+            if (stop.group_id != start_stop.group_id && stop.group_id != end_stop.group_id)
+              transfer_stops.push(stop);
           });
       });
     });
@@ -646,20 +648,20 @@ async function calculate_routes(start, end) {
   });
 
 
-  async function try_start_stop_routegroup(start, end, start_stop, end_stop, routegroup, seen_routes) {
+  async function try_start_stop_routegroup(start, end, start_stop, end_stop, routegroup, seen_routes, is_transfer) {
     // Although they share a routegroup, which for WMATA Metro Bus is the
     // name of a route, they could be on different directions of the route,
     // or the end stop could precede the start stop. Look at the actual
     // routes now. Return the first matching route.
     var routes = await all_routegroups[routegroup].getRoutes();
     for (var i = 0; i < routes.length; i++) {
-      var trip = await try_start_stop_route(start, end, start_stop, end_stop, routes[i], seen_routes);
+      var trip = await try_start_stop_route(start, end, start_stop, end_stop, routes[i], seen_routes, is_transfer);
       if (trip)
         return trip;
     }
   }
 
-  async function try_start_stop_route(start, end, start_stop, end_stop, route, seen_routes) {
+  async function try_start_stop_route(start, end, start_stop, end_stop, route, seen_routes, is_transfer) {
     // Check that the stops are on the route and they are in the order
     // the vehicle is going.
     var route_stops = await getRouteStops(route);
@@ -699,8 +701,8 @@ async function calculate_routes(start, end) {
     // than taking transit between them.
     var start_walking_time = walking_time(start, start_stop.coord) + start_stop.time_to_enter_and_exit;
     var end_walking_time = walking_time(end, end_stop.coord) + end_stop.time_to_enter_and_exit;
-    if (duration < 5)
-      return null; // don't bother taking transit for less than 3 minutes
+    if (duration < 5 && !is_transfer)
+      return null; // don't bother taking transit for less than 3 minutes, except when transferring
     if (walking_time(start_stop.coord, end_stop.coord) < (start_walking_time + end_walking_time)/2)
       return null;
 
@@ -717,9 +719,9 @@ async function calculate_routes(start, end) {
   }
 
   async function try_start_transfer_stop_route(start_stop, start_route, transfer_stop, end_stop, end_route) {
-    var trip1 = await try_start_stop_routegroup(start, transfer_stop.coord, start_stop, transfer_stop, start_route, {});
-    var trip2 = await try_start_stop_routegroup(transfer_stop.coord, end, transfer_stop, end_stop, end_route, {});
-    //console.log(start_stop.name, "|", trip1.route.id, "|", transfer_stop.name, "|", trip2.route.id, "|", end_stop.name)
+    var trip1 = await try_start_stop_routegroup(start, transfer_stop.coord, start_stop, transfer_stop, start_route, {}, true);
+    var trip2 = await try_start_stop_routegroup(transfer_stop.coord, end, transfer_stop, end_stop, end_route, {}, true);
+    //console.log(start_stop.name, "|", start_route, "|", trip1, "|", transfer_stop.name, "|", trip2, "|", end_stop.name, "|", end_route)
     if (trip1 && trip2) {
       return {
         route: trip1.route,
