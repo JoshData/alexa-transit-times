@@ -29,12 +29,17 @@ function say_predictions(tripinfo, response, options) {
     text += " You asked for times for trips from " + tripinfo.start.name + " and going to " + tripinfo.end.name + ". ";
 
   var count = 0;
+  var last_stop = null;
   for (var i = 0; i < tripinfo.trips.length; i++) {
     var trip = tripinfo.trips[i];
     if (typeof trip.arrival === "undefined") continue; // possible route but no upcoming vehicle
     if (count > 3) continue;
-    text += ("At " + trip.start_stop.name + " a " + trip.route_name
-      + " is arriving in " + trip.arrival + " minutes. ");
+    if (trip.start_stop.name != last_stop)
+      text += "At " + trip.start_stop.name;
+    else
+      text += "Then ";
+    text += " a " + trip.route_name_short + " arrives in " + trip.arrival + " minutes. ";
+    last_stop = trip.start_stop.name;
     count++;
   }
 

@@ -216,7 +216,8 @@ async function load_wmata_metro_rail() {
     var line = route_id[1];
     return {
       id: "wmata_rail:" + line,
-      name: line_names[line],
+      short_name: line_names[line],
+      long_name: line_names[line] + " train",
       modality: 'wmata_rail',
       line: line,
     }
@@ -351,7 +352,8 @@ async function load_wmata_metro_bus() {
     var direction = routedata['Direction' + direction_num];
     return {
       id: "wmata_bus:" + routeid + ":" + direction_num,
-      name: routedata.RouteID + " bus going " + direction.DirectionText + " toward " + direction.TripHeadsign,
+      short_name: routedata.RouteID,
+      long_name: routedata.RouteID + " bus going " + direction.DirectionText + " toward " + direction.TripHeadsign,
       modality: 'wmata_bus',
       routeid: routedata.RouteID,
       direction_num: direction_num,
@@ -762,7 +764,8 @@ async function get_trip_predictions(trips) {
       // Return this trip.
       added_any_runs = true;
       var tp = shallow_clone(trip);
-      tp.route_name = pred.name || trip.route.name;
+      tp.route_name_long = pred.name || trip.route.long_name;
+      tp.route_name_short = pred.name || trip.route.short_name;
       tp.arrival = pred.time;
       tp.total_time = pred.time + trip.total_time - trip.start_walking_time;
       trip_runs.push(tp);
@@ -773,7 +776,8 @@ async function get_trip_predictions(trips) {
     // might not be available right now.
     if (!added_any_runs) {
       var tp = shallow_clone(trip);
-      tp.route_name = trip.route.name;
+      tp.route_name_long = trip.route.long_name;
+      tp.route_name_short = trip.route.short_name;
       trip_runs.push(tp);
     }
   }
@@ -866,7 +870,7 @@ async function do_demo() {
 
   trips.forEach(function(trip) {
     console.log("At", trip.start_stop.name,
-                "a", trip.route_name,
+                "a", trip.route_name_long,
                 "is arriving in", trip.prediction, "minutes",
                 //"(that's", parseInt(trip.time_to_spare), "minutes to spare)",
                 "(" + (trip.transfer_stop ? "transfer at " + trip.transfer_stop.name + " to the " + trip.transfer_route.name + " and " : "") + "get off at", trip.end_stop.name, ")",
