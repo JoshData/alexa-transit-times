@@ -37,18 +37,29 @@ function web_request(host, path, qs, headers, cache) {
         return;
       }
 
+      console.log(">", path);
       https.get({
         host: host,
         path: path,
         headers: headers,
       }, (res) => {
-        console.log(">", path, res.statusCode);
         var body = '';
         res.on('data', (chunk) => {
           body += chunk;
         });
         res.on('end', () => {
           var body_parsed = JSON.parse(body);
+
+          // Error message detection across the particular APIs we're calling.
+          if ('statusCode' in body_parsed && body_parsed.statusCode != 200) {
+            reject(body_parsed.message);
+            return;
+          }
+          if (body_parsed.Message) {
+            reject(body_parsed.Message);
+            return;
+          }
+
           if (cache) {
             web_request_mem_cache[cache_key] = body_parsed;
             web_request_disk_cache.set(cache_key, body); // ignore promise completion
@@ -56,7 +67,7 @@ function web_request(host, path, qs, headers, cache) {
           resolve(body_parsed);
         });
       }).on('error', (e) => {
-        reject(null);
+        reject(e);
       });
     });
   })
@@ -74,6 +85,7 @@ function geocode(q) {
 all_station_stops = null;
 all_routegroups = null;
 all_station_stops_by_routegroup_pairs = null;
+route_handlers = { };
 async function load_initial_data() {
   // Load stops and routes.
   all_station_stops = [];
@@ -94,6 +106,21 @@ async function load_initial_data() {
       });
     });
   });
+}
+
+function getRouteStops(route) {
+  var rp = route.id.split(/:/);
+  return route_handlers[rp[0]].getStops(route);
+}
+
+function getRouteEstimatedTripTime(route, start_stop, end_stop) {
+  var rp = route.id.split(/:/);
+  return route_handlers[rp[0]].getEstimatedTripTime(route, start_stop, end_stop);
+}
+
+function getRoutePredictions(route, stop, end_stop, cached_predictions) {
+  var rp = route.id.split(/:/);
+  return route_handlers[rp[0]].getPredictions(route, stop, end_stop, cached_predictions);
 }
 
 async function load_wmata_metro_rail() {
@@ -166,49 +193,53 @@ async function load_wmata_metro_rail() {
         return [{
           id: "wmata_rail:" + line,
           name: line_names[line],
-          stops: null, // assume all stations are on all runs
-          getEstimatedTripTime: async function(start_stop, end_stop) {
-            var info = await wmata_api('/Rail.svc/json/jSrcStationToDstStationInfo', { FromStationCode: start_stop.raw.StationCode1, ToStationCode: end_stop.raw.StationCode1 }, true);
-            if (!info.StationToStationInfos) return null;
-            return info.StationToStationInfos[0].RailTime;
-          },
-          get_predictions: async function(stop, end_stop, cached_predictions) {
-            // Get real time predictions at the stop.
-            var station_codes = stop.raw.StationCode1 + "," + (stop.raw.StationCode2||"");
-            var cache_key = "rail:" + station_codes;
-            if (!(cache_key in cached_predictions))
-              cached_predictions[cache_key] = await wmata_api('/StationPrediction.svc/json/GetPrediction/' + station_codes);
-            if (!cached_predictions[cache_key].Trains) return [];
-            var preds = [];
-            for (var i = 0; i < cached_predictions[cache_key].Trains.length; i++) {
-              // Filter out predictions to have just the ones for the line
-              // and that have an intermediate stop at end_stop.
-              var train = cached_predictions[cache_key].Trains[i];
-              if (train.Line != line) continue;
-              var path1 = await wmata_api('/Rail.svc/json/jPath', { FromStationCode: stop.raw.StationCode1, ToStationCode: train.DestinationCode }, true);
-              var path2 = await wmata_api('/Rail.svc/json/jPath', { FromStationCode: stop.raw.StationCode2, ToStationCode: train.DestinationCode }, true);
-              var path = (path1.Path || []).concat( (path2.Path || []) );
-              path.forEach(function(station) {
-                if (station.StationCode != end_stop.raw.StationCode1
-                  && station.StationCode != end_stop.raw.StationCode2)
-                  return;
-                // This train makes a stop at the end stop.
-                var min = parseInt(train.Min);
-                if (min)
-                  preds.push({
-                    time: min,
-                    name: line_names[train.Line] + " train toward " + train.DestinationName,
-                  });
-              })
-            }
-            return preds;
-          },
+          line: line,
         }];
       },
     };
 
     return id;
-  }  
+  }
+
+  route_handlers['wmata_rail'] = {
+    getStops: async function() { return null }, // assume all stations are on all runs
+    getEstimatedTripTime: async function(route, start_stop, end_stop) {
+      var info = await wmata_api('/Rail.svc/json/jSrcStationToDstStationInfo', { FromStationCode: start_stop.raw.StationCode1, ToStationCode: end_stop.raw.StationCode1 }, true);
+      if (!info.StationToStationInfos) return null;
+      return info.StationToStationInfos[0].RailTime;
+    },
+    getPredictions: async function(route, stop, end_stop, cached_predictions) {
+      // Get real time predictions at the stop.
+      var station_codes = stop.raw.StationCode1 + "," + (stop.raw.StationCode2||"");
+      var cache_key = "rail:" + station_codes;
+      if (!(cache_key in cached_predictions))
+        cached_predictions[cache_key] = await wmata_api('/StationPrediction.svc/json/GetPrediction/' + station_codes);
+      if (!cached_predictions[cache_key].Trains) return [];
+      var preds = [];
+      for (var i = 0; i < cached_predictions[cache_key].Trains.length; i++) {
+        // Filter out predictions to have just the ones for the line
+        // and that have an intermediate stop at end_stop.
+        var train = cached_predictions[cache_key].Trains[i];
+        if (train.Line != route.line) continue;
+        var path1 = await wmata_api('/Rail.svc/json/jPath', { FromStationCode: stop.raw.StationCode1, ToStationCode: train.DestinationCode }, true);
+        var path2 = await wmata_api('/Rail.svc/json/jPath', { FromStationCode: stop.raw.StationCode2, ToStationCode: train.DestinationCode }, true);
+        var path = (path1.Path || []).concat( (path2.Path || []) );
+        path.forEach(function(station) {
+          if (station.StationCode != end_stop.raw.StationCode1
+            && station.StationCode != end_stop.raw.StationCode2)
+            return;
+          // This train makes a stop at the end stop.
+          var min = parseInt(train.Min);
+          if (min)
+            preds.push({
+              time: min,
+              name: line_names[train.Line] + " train toward " + train.DestinationName,
+            });
+        })
+      }
+      return preds;
+    },    
+  }
 }
 
 async function load_wmata_metro_bus() {
@@ -222,15 +253,47 @@ async function load_wmata_metro_bus() {
       routegroups[add_routegroup(route)] = true;
     });
 
+    // Clean up stop names for speech.
+    var stop_name = stop.Name;
+    var abbrevs = {
+      "+": "and",
+      "ALY": "alley",
+      "APT": "apartment",
+      "APTS": "apartments",
+      "AVE": "avenue",
+      "BETW": "between",
+      "BLVD": "boulevard",
+      "CT": "court",
+      "DR": "drive",
+      "NE": "northeast",
+      "NW": "northwest",
+      "PKWY": "parkway",
+      "PL": "place",
+      "RD": "road",
+      "RT": "route",
+      "SE": "southeast",
+      "ST": "street",
+      "ST.": "street",
+      "STA": "station",
+      "STA.": "station",
+      "SW": "southwest",
+    };
+    stop_name = stop_name.split(/\s+/);
+    for (var i = 0; i < stop_name.length; i++)
+      if (stop_name[i] in abbrevs)
+        stop_name[i] = abbrevs[stop_name[i]];
+    stop_name = stop_name.join(" ");
+
     // Add station.
     all_station_stops.push({
       id: "wmata_bus:" + stop.StopID,
       group_id: "wmata_bus:" + stop.StopID,
-      type: "wmata_bus",
-      name: stop.Name,
+      modality: "wmata_bus",
+      name: stop_name,
       coord: [stop.Lat, stop.Lon],
       time_to_enter_and_exit: 0,
-      transfer_time: 10, // minutes, estimating time to next bus arrival
+      //transfer_time: 10, // minutes, estimating time to next bus arrival
+      can_transfer: false,
       avg_speed: 8, // MPH
       raw: stop,
       routegroups: routegroups,
@@ -252,55 +315,8 @@ async function load_wmata_metro_bus() {
           directions.push({
             id: "wmata_bus:" + routedata.RouteID + ":" + direction_num,
             name: routedata.RouteID + " bus going " + direction.DirectionText + " toward " + direction.TripHeadsign,
-            stops: direction.Stops.map(function(stop) { return "wmata_bus:" + stop.StopID }),
-            getEstimatedTripTime: async function(start_stop, end_stop) {
-              // Compute the total transit time. Use schedule data for today to find the next trip.
-              var now = moment();
-              var route_schedule = await wmata_api('/Bus.svc/json/jRouteSchedule', {
-                RouteID: route,
-                Date: moment().format("YYYY-MM-DD"),
-              }, true);
-              var runs = route_schedule["Direction" + direction_num];
-              if (!runs || runs.length == 0)
-                return null; // no schedule for today?
-              var avg_duration = 0;
-              for (let j = 0; j < runs.length; j++) {
-                // Find the start and end stops on this run.
-                let run = runs[j].StopTimes;
-                let start_stop_index = null;
-                let end_stop_index = null;
-                for (let i = 0; i < run.length; i++) {
-                  if (run[i].StopID == start_stop.raw.StopID)
-                    start_stop_index = i;
-                  if (run[i].StopID == end_stop.raw.StopID)
-                    end_stop_index = i;
-                }
-                if (start_stop_index === null || end_stop_index == null || end_stop_index <= start_stop_index)
-                  continue; // stops not on this run, or weirdly the end is before the start
-
-                // TODO: How are LOOP routes handled where the end might be before the start?
-
-                var start_time = moment.tz(run[start_stop_index].Time, "America/New_York");
-                var end_time = moment.tz(run[end_stop_index].Time, "America/New_York");
-                var d = end_time.diff(start_time, "minutes");
-                avg_duration += d;
-                if (start_time.diff(now) > 0)
-                  return d;
-              }
-
-              // Found no future scheduled data, so use average.
-              return d / runs.length;
-            },
-            get_predictions: async function(stop, end_stop, cached_predictions) {
-              if (!(stop.raw.StopID in cached_predictions))
-                cached_predictions[stop.raw.StopID] = await wmata_api('/NextBusService.svc/json/jPredictions', { StopID: stop.raw.StopID });
-              var preds = [];
-              (cached_predictions[stop.raw.StopID].Predictions || []).forEach(function(prediction_run) {
-                if ((prediction_run.RouteID == route) && (prediction_run.DirectionNum == direction_num))
-                  preds.push({ time: prediction_run.Minutes });
-              });
-              return preds;
-            },
+            routeid: routedata.RouteID,
+            direction_num: direction_num,
           });
         }
         make_direction("0", routedata.Direction0);
@@ -311,6 +327,62 @@ async function load_wmata_metro_bus() {
 
     return id;
   }
+
+  route_handlers['wmata_bus'] = {
+    getStops: async function(route) {
+      var routedata = await wmata_api('/Bus.svc/json/jRouteDetails', { RouteID: route.routeid }, true);
+      var direction = routedata["Direction" + route.direction_num];
+      return direction.Stops.map(function(stop) { return "wmata_bus:" + stop.StopID })
+    },
+    getEstimatedTripTime: async function(route, start_stop, end_stop) {
+      // Compute the total transit time. Use schedule data for today to find the next trip.
+      var now = moment();
+      var route_schedule = await wmata_api('/Bus.svc/json/jRouteSchedule', {
+        RouteID: route.routeid,
+        Date: moment().format("YYYY-MM-DD"),
+      }, true);
+      var runs = route_schedule["Direction" + route.direction_num];
+      if (!runs || runs.length == 0)
+        return null; // no schedule for today?
+      var avg_duration = 0;
+      for (let j = 0; j < runs.length; j++) {
+        // Find the start and end stops on this run.
+        let run = runs[j].StopTimes;
+        let start_stop_index = null;
+        let end_stop_index = null;
+        for (let i = 0; i < run.length; i++) {
+          if (run[i].StopID == start_stop.raw.StopID)
+            start_stop_index = i;
+          if (run[i].StopID == end_stop.raw.StopID)
+            end_stop_index = i;
+        }
+        if (start_stop_index === null || end_stop_index == null || end_stop_index <= start_stop_index)
+          continue; // stops not on this run, or weirdly the end is before the start
+
+        // TODO: How are LOOP routes handled where the end might be before the start?
+
+        var start_time = moment.tz(run[start_stop_index].Time, "America/New_York");
+        var end_time = moment.tz(run[end_stop_index].Time, "America/New_York");
+        var d = end_time.diff(start_time, "minutes");
+        avg_duration += d;
+        if (start_time.diff(now) > 0)
+          return d;
+      }
+
+      // Found no future scheduled data, so use average.
+      return d / runs.length;
+    },
+    getPredictions: async function(route, stop, end_stop, cached_predictions) {
+      if (!(stop.raw.StopID in cached_predictions))
+        cached_predictions[stop.raw.StopID] = await wmata_api('/NextBusService.svc/json/jPredictions', { StopID: stop.raw.StopID });
+      var preds = [];
+      (cached_predictions[stop.raw.StopID].Predictions || []).forEach(function(prediction_run) {
+        if ((prediction_run.RouteID == route.routeid) && (prediction_run.DirectionNum == route.direction_num))
+          preds.push({ time: prediction_run.Minutes });
+      });
+      return preds;
+    },
+  };
 };
 
 function simple_distance_squared(p1, p2) {
@@ -377,9 +449,9 @@ async function iterate_stop_pairs_by_distance(start, end, cb) {
         );
     }
 
-    // If the total walking time is more than 40 minutes, stop iterations,
+    // If the total walking time is more than 25 minutes, stop iterations,
     // those are useless directions.
-    if (walking_time(start, start_stop.coord) + walking_time(end, end_stop.coord) > 40)
+    if (walking_time(start, start_stop.coord) + walking_time(end, end_stop.coord) > 25)
       return;
 
     // Take this pair. Call the callback with this pair.
@@ -419,7 +491,7 @@ async function iterate_stop_pairs_by_distance(start, end, cb) {
   }
 }
 
-async function compute_routes(start, end) {
+async function calculate_routes(start, end) {
   // Compute the fastest route from start to end. Iterate over the
   // pairs of stops nearest to the end points in ascending order
   // over total distance first assuming no transfers, then assuming
@@ -457,6 +529,11 @@ async function compute_routes(start, end) {
   // Find one-transfer routes that are no slower than the worst
   // time we found so far.
   await iterate_stop_pairs_by_distance(start, end, async function(start_stop, end_stop) {
+    if ("can_transfer" in start_stop && !start_stop.can_transfer)
+      return;
+    if ("can_transfer" in end_stop && !end_stop.can_transfer)
+      return;
+
     // Stop if this pair of stops requires more walking distance that no
     // transfer could be faster than the fastest route we have already.
     if (
@@ -490,7 +567,7 @@ async function compute_routes(start, end) {
     transfer_stops.sort(comparer);
 
     for (var m = 0; m < transfer_stops.length; m++) {
-      if (m > 100) break;
+      if (m > 50) break;
       var transfer_stop = transfer_stops[m];
 
       // Stop if the route would be slower than what we have already.
@@ -544,14 +621,15 @@ async function compute_routes(start, end) {
   async function try_start_stop_route(start, end, start_stop, end_stop, route, seen_routes) {
     // Check that the stops are on the route and they are in the order
     // the vehicle is going.
-    if (route.stops) {
+    var route_stops = await getRouteStops(route);
+    if (route_stops) {
       // Get the index of each stop in the route's path.
       var start_stop_index = null;
       var end_stop_index = null;
-      for (let i = 0; i < route.stops.length; i++) {
-        if (route.stops[i] == start_stop.id)
+      for (let i = 0; i < route_stops.length; i++) {
+        if (route_stops[i] == start_stop.id)
           start_stop_index = i;
-        if (route.stops[i] == end_stop.id)
+        if (route_stops[i] == end_stop.id)
           end_stop_index = i;
       }
 
@@ -570,7 +648,7 @@ async function compute_routes(start, end) {
       return;
     seen_routes[route.id] = true;
 
-    var duration = await route.getEstimatedTripTime(start_stop, end_stop);
+    var duration = await getRouteEstimatedTripTime(route, start_stop, end_stop);
 
     // Could not find a run to compute duration?
     if (duration === null)
@@ -632,7 +710,7 @@ async function get_trip_predictions(trips) {
   for (var i = 0; i < trips.length; i++) {
     // Get the next bus at the start.
     var trip = trips[i];
-    var preds = await trip.route.get_predictions(trip.start_stop, trip.transfer_stop || trip.end_stop, cached_predictions);
+    var preds = await getRoutePredictions(trip.route, trip.start_stop, trip.transfer_stop || trip.end_stop, cached_predictions);
     var added_any_runs = false;
     preds.forEach(function(pred) {
       // Skip if the user can't walk there in time. Add an extra
@@ -684,6 +762,59 @@ async function get_trip_predictions(trips) {
   return trip_runs;
 }
 
+exports.get_upcoming_trips = async function(start_address, end_address) {
+  // Geocode the addresses.
+  var start = await geocode(start_address);
+  var end = await geocode(end_address);
+  start = {
+    name: start.results[0].formatted_address,
+    coord: [start.results[0].location.lat, start.results[0].location.lng],
+  }
+  end = {
+    name: end.results[0].formatted_address,
+    coord: [end.results[0].location.lat, end.results[0].location.lng],
+  }
+
+  // Calculate routes and return next predictions.
+  var trips = await calculate_routes(start.coord, end.coord);
+  trips = await get_trip_predictions(trips);
+  return {
+    start: start,
+    end: end,
+    trips: trips,
+  };
+}
+
+exports.compute_routes = async function(start_address, end_address) {
+  // Geocode the addresses.
+  var start = await geocode(start_address);
+  var end = await geocode(end_address);
+  start = {
+    name: start.results[0].formatted_address,
+    coord: [start.results[0].location.lat, start.results[0].location.lng],
+  }
+  end = {
+    name: end.results[0].formatted_address,
+    coord: [end.results[0].location.lat, end.results[0].location.lng],
+  }
+
+  // Calculate routes.
+  var trips = await calculate_routes(start.coord, end.coord);
+  return {
+    start: start,
+    end: end,
+    trips: trips,
+  };
+}
+
+exports.get_predictions = async function(route) {
+  var trips = await get_trip_predictions(route.trips);
+  return {
+    start: route.start,
+    end: route.end,
+    trips: trips,
+  };
+}
 
 async function do_demo() {
   var addr1 = process.argv[2];
@@ -702,7 +833,7 @@ async function do_demo() {
     coord: [end.results[0].location.lat, end.results[0].location.lng],
   }
 
-  var trips = await compute_routes(start.coord, end.coord);
+  var trips = await calculate_routes(start.coord, end.coord);
   trips = await get_trip_predictions(trips);
 
   trips.forEach(function(trip) {
@@ -717,6 +848,7 @@ async function do_demo() {
   })
 }
 
+// Hmm, async...
 load_initial_data()
-  .then(do_demo)
+//  .then(do_demo)
 
