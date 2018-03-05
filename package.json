@@ -33,6 +33,7 @@
     "geodist": "^0.2.1",
     "moment": "^2.21.0",
     "moment-timezone": "^0.5.14",
+    "node-persist": "^2.1.0",
     "point-line-distance": "^1.0.0"
   }
 }

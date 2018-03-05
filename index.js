@@ -1,10 +1,13 @@
 var express = require("express");
 var alexa = require("alexa-app");
 var express_app = express();
+var storage = require('node-persist');
 
 var trip_planner = require("./trip-planner.js");
 
 var app = new alexa.app("transit_trips");
+
+storage.initSync();
 
 // Utility functions.
 
@@ -44,9 +47,40 @@ function say_predictions(tripinfo, response, options) {
 
 // Intents.
 
+function get_user_trips(request) {
+  var user = storage.getItemSync('user-' + request.userId);
+  if (!user) return [];
+  return (user.trips || []);
+}
+
+function add_user_trip(request, trip) {
+  console.log(request.userId, request)
+  var key = 'user-' + request.userId;
+  var user = storage.getItemSync(key);
+  if (!user) user = { };
+  if (!user.trips) user.trips = [ ];
+  
+  // Update existing trip by name.
+  for (var i = 0; i < user.trips.length; i++) {
+    if (user.trips[i].name == trip.name) {
+      user.trips[i] = trip;
+      storage.setItemSync(key, user);
+      return;
+    }
+  }
+
+  // Remove the oldest if more than 50 trips.
+  if (user.trips.length >= 50)
+    user.trips.shift();
+
+  // Append.
+  user.trips.push(trip);
+  storage.setItemSync(key, user);
+}
+
 app.launch(function(request, response) {
-  var trips = request.getSession().get("trips");
-  if (!trips)
+  var trips = get_user_trips(request);
+  if (trips.length == 0)
     response.say("Start by adding a trip. For instance, say 'add trip named work' to get started.");
   else
     response.say("You have " + trips.length + " trips stored. You can add a trip or list trips.")
@@ -77,13 +111,20 @@ app.intent("times_from_addresses", {
 );
 
 app.intent("list_trips", { }, function(request, response) {
-  var trips = request.getSession().get("trips");
-  if (trips)
-    response.say("You have " + trips.length + " trips.")
-  else
-    response.say("You don't have any trips yet. Start by saying 'add trip named work'.")
   response.shouldEndSession(false);
   request.getSession().clear("add_trip");
+  var trips = get_user_trips(request);
+  if (trips.length == 0) {
+    response.say("You don't have any trips yet. Start by saying 'add trip named work'.")
+    return;
+  }
+
+  var text = "You have " + trips.length + " trip" + (trips.length != 1 ? "s" : "") + ": ";
+  trips.forEach(function(trip) {
+    text += trip.name + ", ";
+  })
+  text += "."
+  response.say(text);
 })
 
 app.intent("add_trip", {
@@ -129,16 +170,20 @@ app.intent("address", {
       var to_address = make_address(request, "address");
       
       // Compute routes.
-      var tripinfo = await trip_planner.compute_routes(from_address, to_address);
-      tripinfo.name = trip_name;
+      var trip;
+      try {
+        trip = await trip_planner.compute_routes(from_address, to_address);
+        trip.name = trip_name;
+      } catch (e) {
+        response.say("Sorry, there was a problem.");
+        return;
+      }
 
       // Store in session.
-      var trips = (request.getSession().get("trips") || []);
-      trips.push(tripinfo);
-      request.getSession().set("trips", trips);
+      add_user_trip(request, trip);
 
-      response.say("I've added a trip named " + trip_name + " from " + tripinfo.start.name + " to " + tripinfo.end.name + " with " + tripinfo.trips.length + " routes."
-        + " To get the times, say 'check times to " + trip_name + "'." );
+      response.say("I've added a trip named " + trip.name + " from " + trip.start.name + " to " + trip.end.name + " with " + trip.trips.length + " routes."
+        + " To get the times, say 'check times to " + trip.name + "'.");
     }
 
     response.shouldEndSession(false);
@@ -153,11 +198,13 @@ app.intent("do_trip", {
   },
   async function(request, response) {
     request.getSession().clear("add_trip");
-    response.shouldEndSession(false);
+
+    if (request.type() == "IntentRequest")
+      response.shouldEndSession(false);
 
     // Is this name the name of a trip?
     var trip_name = request.slot("trip_name");
-    var trips = (request.getSession().get("trips") || []);
+    var trips = get_user_trips(request);
     for (var i = 0; i < trips.length; i++) {
       if (trips[i].name == trip_name) {
         var predictions = await trip_planner.get_predictions(trips[i]);

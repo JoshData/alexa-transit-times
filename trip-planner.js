@@ -169,7 +169,7 @@ async function load_wmata_metro_rail() {
     all_station_stops.push({
       id: "wmata_rail:" + entrance.ID,
       group_id: "wmata_rail:" + station_name,
-      type: "wmata_rail",
+      modality: "wmata_rail",
       name: station_name, // entrance.Name,
       coord: [entrance.Lat, entrance.Lon],
       time_to_enter_and_exit: 2,
@@ -193,6 +193,7 @@ async function load_wmata_metro_rail() {
         return [{
           id: "wmata_rail:" + line,
           name: line_names[line],
+          modality: 'wmata_rail',
           line: line,
         }];
       },
@@ -315,6 +316,7 @@ async function load_wmata_metro_bus() {
           directions.push({
             id: "wmata_bus:" + routedata.RouteID + ":" + direction_num,
             name: routedata.RouteID + " bus going " + direction.DirectionText + " toward " + direction.TripHeadsign,
+            modality: 'wmata_bus',
             routeid: routedata.RouteID,
             direction_num: direction_num,
           });
