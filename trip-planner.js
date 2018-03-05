@@ -264,7 +264,8 @@ async function load_wmata_metro_rail() {
           if (min)
             preds.push({
               time: min,
-              name: line_names[train.Line] + " train toward " + train.DestinationName,
+              short_name: line_names[train.Line],
+              long_name: line_names[train.Line] + " train toward " + train.DestinationName,
             });
         })
       }
@@ -774,8 +775,8 @@ async function get_trip_predictions(trips) {
       // Return this trip.
       added_any_runs = true;
       var tp = shallow_clone(trip);
-      tp.route_name_long = pred.name || trip.route.long_name;
-      tp.route_name_short = pred.name || trip.route.short_name;
+      tp.route_name_long = pred.long_name || trip.route.long_name;
+      tp.route_name_short = pred.short_name || trip.route.short_name;
       tp.arrival = pred.time;
       tp.total_time = pred.time + trip.total_time - trip.start_walking_time;
       trip_runs.push(tp);
