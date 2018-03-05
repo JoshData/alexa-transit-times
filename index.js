@@ -30,17 +30,21 @@ function say_predictions(tripinfo, response, options) {
 
   var count = 0;
   var last_stop = null;
+  var seen_modalities = { };
   for (var i = 0; i < tripinfo.trips.length; i++) {
     var trip = tripinfo.trips[i];
     if (typeof trip.arrival === "undefined") continue; // possible route but no upcoming vehicle
-    if (count > 3) continue;
+    if (count >= 3 && seen_modalities[trip.route.modality]) continue; // first three routes plus the first route of any modality not yet seen
     if (trip.start_stop.name != last_stop)
-      text += "At " + trip.start_stop.name;
+      text += "At " + trip.start_stop.name + " ";
     else
       text += "Then ";
-    text += " a " + trip.route_name_short + " arrives in " + trip.arrival + " minutes. ";
+    text += "a " + trip.route_name_short + " arrives in " + trip.arrival + " minutes. ";
+    if (trip.transfer_stop)
+      text += "Transfer at " + trip.transfer_stop.name + " to the " + trip.transfer_route.short_name + ". ";
     last_stop = trip.start_stop.name;
     count++;
+    seen_modalities[trip.route.modality] = true;
   }
 
   if (!count) {
@@ -181,6 +185,7 @@ app.intent("address", {
         trip.name = trip_name;
       } catch (e) {
         response.say("Sorry, there was a problem.");
+        console.log(e);
         return;
       }
 

@@ -227,6 +227,14 @@ async function load_wmata_metro_rail() {
     getRoute: get_route_from_id,
     getStops: async function(route) { return null }, // assume all stations are on all runs
     getEstimatedTripTime: async function(route, start_stop, end_stop) {
+      if (start_stop.raw.StationCode1 == end_stop.raw.StationCode1)
+        return 1; // minimum of one minute transfer
+      if (start_stop.raw.StationCode1 == end_stop.raw.StationCode2)
+        return 1; // minimum of one minute transfer
+      if (start_stop.raw.StationCode2 == end_stop.raw.StationCode1)
+        return 1; // minimum of one minute transfer
+      if (start_stop.raw.StationCode2 && start_stop.raw.StationCode2 == end_stop.raw.StationCode2)
+        return 1; // minimum of one minute transfer
       var info = await wmata_api('/Rail.svc/json/jSrcStationToDstStationInfo', { FromStationCode: start_stop.raw.StationCode1, ToStationCode: end_stop.raw.StationCode1 }, true);
       if (!info.StationToStationInfos) return null;
       return info.StationToStationInfos[0].RailTime;
@@ -600,7 +608,7 @@ async function calculate_routes(start, end) {
     transfer_stops.sort(comparer);
 
     for (var m = 0; m < transfer_stops.length; m++) {
-      if (m > 50) break;
+      if (m > 150) break;
       var transfer_stop = transfer_stops[m];
 
       // Stop if the route would be slower than what we have already.
@@ -627,7 +635,7 @@ async function calculate_routes(start, end) {
               //console.log(routegroups1[i] + "*" + transfer_stop.group_id)
 
               // Stop if the best transfer is too long.
-              if (trip.total_time > max_trip_time * 1.1)
+              if (trip.total_time > max_trip_time * 1.2)
                 return trips;
 
               seen_routes[all_routegroups[routegroups1[i]].id] = true;
@@ -871,9 +879,9 @@ async function do_demo() {
   trips.forEach(function(trip) {
     console.log("At", trip.start_stop.name,
                 "a", trip.route_name_long,
-                "is arriving in", trip.prediction, "minutes",
+                "is arriving in", trip.arrival, "minutes",
                 //"(that's", parseInt(trip.time_to_spare), "minutes to spare)",
-                "(" + (trip.transfer_stop ? "transfer at " + trip.transfer_stop.name + " to the " + trip.transfer_route.name + " and " : "") + "get off at", trip.end_stop.name, ")",
+                "(" + (trip.transfer_stop ? "transfer at " + trip.transfer_stop.name + " to the " + trip.transfer_route.long_name + " and " : "") + "get off at", trip.end_stop.name, ")",
                 "with an ETA of", parseInt(trip.total_time), "minutes",
                 "(" + parseInt(trip.walking_time), "min. walking)",
                 );
@@ -882,5 +890,5 @@ async function do_demo() {
 
 // Hmm, async...
 load_initial_data()
-  //.then(do_demo)
+//  .then(do_demo)
 
