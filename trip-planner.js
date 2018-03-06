@@ -491,9 +491,9 @@ async function iterate_stop_pairs_by_distance(start, end, cb) {
         );
     }
 
-    // If the total walking time is more than 25 minutes, stop iterations,
+    // If the total walking time is more than 45 minutes, stop iterations,
     // those are useless directions.
-    if (walking_time(start, start_stop.coord) + walking_time(end, end_stop.coord) > 25)
+    if (walking_time(start, start_stop.coord) + walking_time(end, end_stop.coord) > 45)
       return;
 
     // Take this pair. Call the callback with this pair.
@@ -572,6 +572,9 @@ async function calculate_routes(start, end) {
   // Find one-transfer routes that are no slower than the worst
   // time we found so far.
   await iterate_stop_pairs_by_distance(start, end, async function(start_stop, end_stop) {
+    if (start_stop.modality != end_stop.modality)
+      return;
+
     if ("can_transfer" in start_stop && !start_stop.can_transfer)
       return;
     if ("can_transfer" in end_stop && !end_stop.can_transfer)
@@ -876,10 +879,19 @@ async function do_demo() {
     coord: [end.results[0].location.lat, end.results[0].location.lng],
   }
 
+  console.log(
+    start.name, "to", end.name,
+    "(" + (parseInt(geodist({ lat: start.coord[0], lon: start.coord[1] },
+                     { lat: end.coord[0], lon: end.coord[1] },
+                     { unit: "miles", exact: true })*10)/10) + " miles)",
+    "...")
+
   var trips = await calculate_routes(start.coord, end.coord);
+  console.log("Found", trips.length, "routes.");
   trips = await get_trip_predictions(trips);
 
   trips.forEach(function(trip) {
+    //console.log(trip);
     console.log("At", trip.start_stop.name,
                 "a", trip.route_name_long,
                 "is arriving in", trip.arrival, "minutes",
