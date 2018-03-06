@@ -3,6 +3,14 @@ Alexa Transit Times Skill
 
 This is an Alexa skill for getting public transit information such as next bus and train times for your common trips such as your commute.
 
+Local testing:
+
+	node trip-planner.js "25 Massachusetts Ave Northwest, Washington, DC" "3001 Connecticut Ave Northwest, Washington, DC"
+
+Start the skill server:
+
+	node index.js PORT
+
 Examples:
 
 	Alexa, open public transit.

@@ -5,7 +5,7 @@ var storage = require('node-persist');
 
 var trip_planner = require("./trip-planner.js");
 
-var app = new alexa.app("transit_trips");
+var app = new alexa.app("transit-times");
 
 storage.initSync();
 
@@ -274,6 +274,6 @@ app.intent("AMAZON.CancelIntent", { }, stop_cancel_intent_handler);
 // setup the alexa app and attach it to express before anything else
 app.express({ expressApp: express_app }); 
 
-express_app.listen(3000, () => console.log('App listening on port 3000!'))
+express_app.listen(parseInt(process.argv[2]), () => console.log('Started.'))
 
 //console.log(app.schemas.skillBuilder())

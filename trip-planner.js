@@ -905,5 +905,10 @@ async function do_demo() {
 
 // Hmm, async...
 load_initial_data()
-//  .then(do_demo)
+  .then(function() {
+
+  if (process.argv[1] && /trip-planner/.test(process.argv[1]))
+    do_demo();
+
+})
 
