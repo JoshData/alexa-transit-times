@@ -19,7 +19,7 @@ fs.readFileSync('api_keys.txt').toString("ascii").split(/[\r\n]+/g).forEach(func
 var web_request_mem_cache = { };
 var web_request_disk_cache = require('async-disk-cache');
 web_request_disk_cache = new web_request_disk_cache('trip-planner');
-function web_request(host, path, qs, headers, cache) {
+function web_request(host, path, qs, headers, postbody, cache) {
   return new Promise(function(resolve, reject) {
     const https = require('https');
     const querystring = require('querystring');
@@ -39,8 +39,11 @@ function web_request(host, path, qs, headers, cache) {
         return;
       }
 
-      console.log(">", path);
-      https.get({
+      var method = (!postbody ? "GET" : "POST");
+
+      console.log(">", method, path);
+      var req = https.request({
+        method: method,
         host: host,
         path: path,
         headers: headers,
@@ -71,16 +74,24 @@ function web_request(host, path, qs, headers, cache) {
       }).on('error', (e) => {
         reject(e);
       });
+
+      if (postbody)
+        req.write(postbody);
+
+      req.end();
     });
   })
 }
 
 function wmata_api(path, qs, cache) {
-  return web_request('api.wmata.com', path, qs, { api_key: api_keys['wmata'] }, cache)
+  return web_request('api.wmata.com', path, qs, { api_key: api_keys['wmata'] }, null, cache)
 }
 
-function geocode(q) {
-  return web_request("api.geocod.io", "/v1.2/geocode", { q: q, api_key: api_keys['geocodio'] });
+async function geocode(addresses) {
+  var resp = await web_request("api.geocod.io", "/v1.2/geocode", { api_key: api_keys['geocodio'] },
+    { "Content-Type": "application/json" },
+    JSON.stringify(addresses));
+  return resp.results.map((item) => item.response);
 }
 
 // Global route data.
@@ -818,16 +829,15 @@ async function get_trip_predictions(trips) {
 
 exports.get_upcoming_trips = async function(start_address, end_address) {
   // Geocode the addresses.
-  var start = await geocode(start_address);
-  var end = await geocode(end_address);
-  start = {
-    name: start.results[0].formatted_address,
-    coord: [start.results[0].location.lat, start.results[0].location.lng],
-  }
-  end = {
-    name: end.results[0].formatted_address,
-    coord: [end.results[0].location.lat, end.results[0].location.lng],
-  }
+  var geocode_results = await geocode([start_address, end_address]);
+  geocode_results = geocode_results.map(function(item) {
+    return {
+      name: item.results[0].formatted_address,
+      coord: [item.results[0].location.lat, item.results[0].location.lng],
+    };
+  })
+  var start = geocode_results[0];
+  var end = geocode_results[1];
 
   // Calculate routes and return next predictions.
   var trips = await calculate_routes(start.coord, end.coord);
@@ -841,16 +851,15 @@ exports.get_upcoming_trips = async function(start_address, end_address) {
 
 exports.compute_routes = async function(start_address, end_address) {
   // Geocode the addresses.
-  var start = await geocode(start_address);
-  var end = await geocode(end_address);
-  start = {
-    name: start.results[0].formatted_address,
-    coord: [start.results[0].location.lat, start.results[0].location.lng],
-  }
-  end = {
-    name: end.results[0].formatted_address,
-    coord: [end.results[0].location.lat, end.results[0].location.lng],
-  }
+  var geocode_results = await geocode([start_address, end_address]);
+  geocode_results = geocode_results.map(function(item) {
+    return {
+      name: item.results[0].formatted_address,
+      coord: [item.results[0].location.lat, item.results[0].location.lng],
+    };
+  })
+  var start = geocode_results[0];
+  var end = geocode_results[1];
 
   // Calculate routes.
   var routes = await calculate_routes(start.coord, end.coord);
@@ -890,18 +899,15 @@ async function do_demo() {
   var addr1 = process.argv[2];
   var addr2 = process.argv[3];
 
-  var start = await geocode(addr1);
-  var end = await geocode(addr2);
-
-  start = {
-    name: start.results[0].formatted_address,
-    coord: [start.results[0].location.lat, start.results[0].location.lng],
-  }
-
-  end = {
-    name: end.results[0].formatted_address,
-    coord: [end.results[0].location.lat, end.results[0].location.lng],
-  }
+  var geocode_results = await geocode([addr1, addr2]);
+  geocode_results = geocode_results.map(function(item) {
+    return {
+      name: item.results[0].formatted_address,
+      coord: [item.results[0].location.lat, item.results[0].location.lng],
+    };
+  })
+  start = geocode_results[0];
+  end = geocode_results[1];
 
   console.log(
     start.name, "to", end.name,
