@@ -744,11 +744,23 @@ async function calculate_routes(start, end) {
   return trips;
 }
 
+async function refill_trip_metadata(trip) {
+  // Expand the route, start_stop, end_stop, transfer_stop, and transfer_route
+  // which are IDs into their longer data structures.
+  trip.start_stop = all_station_stops_by_id[trip.start_stop];
+  trip.end_stop = all_station_stops_by_id[trip.end_stop];
+  trip.transfer_stop = all_station_stops_by_id[trip.transfer_stop];
+  trip.route = await getRouteFromId(trip.route);
+  trip.transfer_route = trip.transfer_route ? await getRouteFromId(trip.transfer_route) : null;
+}
+
 async function get_trip_predictions(trips) {
   // TODO: The trip's total_time and transit_time are based on
   // schedule data when the trips were computed. Maybe update
   // them with current schedule data since travel times change
   // depending on when they occur.
+
+  trips = trips.slice(); // clone since we edit metadata
 
   // For each trip, explode it into copies for each next transit
   // prediction time.
@@ -757,13 +769,9 @@ async function get_trip_predictions(trips) {
   for (var i = 0; i < trips.length; i++) {
     var trip = trips[i];
 
-    // Expand the route, start_stop, end_stop, transfer_stop, and transfer_route
-    // which are IDs into their longer data structures.
-    trip.start_stop = all_station_stops_by_id[trip.start_stop];
-    trip.end_stop = all_station_stops_by_id[trip.end_stop];
-    trip.transfer_stop = all_station_stops_by_id[trip.transfer_stop];
-    trip.route = await getRouteFromId(trip.route);
-    trip.transfer_route = trip.transfer_route ? await getRouteFromId(trip.transfer_route) : null;
+    // Add back metadata.
+    trip = shallow_clone(trip);
+    await refill_trip_metadata(trip);
 
     // Get the transit predictions at the start stop.
     var preds = await getRoutePredictions(trip.route, trip.start_stop, trip.transfer_stop || trip.end_stop, cached_predictions);
@@ -845,20 +853,35 @@ exports.compute_routes = async function(start_address, end_address) {
   }
 
   // Calculate routes.
-  var trips = await calculate_routes(start.coord, end.coord);
+  var routes = await calculate_routes(start.coord, end.coord);
   return {
     start: start,
     end: end,
-    trips: trips,
+    routes: routes,
   };
 }
 
-exports.get_predictions = async function(route) {
-  var trips = await get_trip_predictions(route.trips);
+async function explain_route(route) {
+  route = shallow_clone(route);
+  await refill_trip_metadata(route);
+  return ("A " + route.route.long_name + " at " + route.start_stop.name
+    + " takes you to " + route.end_stop.name
+    + (route.transfer_stop ? (" with a transfer to the " + route.transfer_route.long_name
+          + " at " + route.transfer_stop.name) : "")
+    + " with a total travel time of " + parseInt(route.total_time) + " minutes with about "
+    + parseInt(route.walking_time) + " minutes of walking.");
+}
+
+exports.explain_route = async function(route) {
+  return await explain_route(route);
+}
+
+exports.get_predictions = async function(trip) {
+  var routes = await get_trip_predictions(trip.routes);
   return {
-    start: route.start,
-    end: route.end,
-    trips: trips,
+    start: trip.start,
+    end: trip.end,
+    routes: routes,
   };
 }
 
@@ -886,11 +909,18 @@ async function do_demo() {
                      { unit: "miles", exact: true })*10)/10) + " miles)",
     "...")
 
-  var trips = await calculate_routes(start.coord, end.coord);
-  console.log("Found", trips.length, "routes.");
-  trips = await get_trip_predictions(trips);
+  var routes = await calculate_routes(start.coord, end.coord);
+  console.log("Found", routes.length, "routes.");
 
-  trips.forEach(function(trip) {
+  for (var i = 0; i < routes.length; i++) {
+    var route = shallow_clone(routes[i]);
+    var expl = await explain_route(route);
+    console.log(expl);
+  }
+
+  routes = await get_trip_predictions(routes);
+
+  routes.forEach(function(trip) {
     //console.log(trip);
     console.log("At", trip.start_stop.name,
                 "a", trip.route_name_long,

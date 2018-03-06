@@ -31,8 +31,8 @@ function say_predictions(tripinfo, response, options) {
   var count = 0;
   var last_stop = null;
   var seen_modalities = { };
-  for (var i = 0; i < tripinfo.trips.length; i++) {
-    var trip = tripinfo.trips[i];
+  for (var i = 0; i < tripinfo.routes.length; i++) {
+    var trip = tripinfo.routes[i];
     if (typeof trip.arrival === "undefined") continue; // possible route but no upcoming vehicle
     if (count >= 3 && seen_modalities[trip.route.modality]) continue; // first three routes plus the first route of any modality not yet seen
     if (trip.start_stop.name != last_stop)
@@ -139,7 +139,9 @@ app.intent("list_trips", { }, function(request, response) {
   trips.forEach(function(trip) {
     text += trip.name + ", ";
   })
-  text += "."
+  text += ". "
+  text += "Say 'tell me about '" + trips[0].name + "' for more information. "
+  text += "Or 'remove trip named '" + trips[0].name + "' to remove it. "
   response.say(text);
 })
 
@@ -199,7 +201,7 @@ app.intent("address", {
       // Store in session.
       add_user_trip(request, trip);
 
-      response.say("I've added a trip named " + trip.name + " from " + trip.start.name + " to " + trip.end.name + " with " + trip.trips.length + " routes."
+      response.say("I've added a trip named " + trip.name + " from " + trip.start.name + " to " + trip.end.name + " with " + trip.routes.length + " routes."
         + " To get the times, say 'check times to " + trip.name + "'.");
     }
 
@@ -252,8 +254,15 @@ app.intent("explain_trip", {
     var trips = get_user_trips(request);
     for (var i = 0; i < trips.length; i++) {
       if (trips[i].name == trip_name) {
-        response.say(trip_name + " is your trip from "
-          + trips[i].start.name + " to " + trips[i].end.name + ".");
+        var text = trip_name + " is your trip from "
+          + trips[i].start.name + " to " + trips[i].end.name + ". ";
+        trips[i].routes.sort(function(a, b) {
+          return (a.total_time - b.total_time);
+        });
+        for (var j = 0; j < trips[i].routes.length; j++) {
+          text += await trip_planner.explain_route(trips[i].routes[j]) + " ";
+        };
+        response.say(text);
         return;
       }
     }
