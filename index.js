@@ -87,6 +87,24 @@ function add_user_trip(request, trip) {
   storage.setItemSync(key, user);
 }
 
+function remove_user_trip(request, trip) {
+  var key = 'user-' + request.userId;
+  var user = storage.getItemSync(key);
+  if (!user) return false;
+  if (!user.trips) return false;
+  
+  // Find existing trip by name.
+  for (var i = 0; i < user.trips.length; i++) {
+    if (user.trips[i].name == trip) {
+      user.trips.splice(i, 1); // remove it
+      storage.setItemSync(key, user);
+      return true;
+    }
+  }
+
+  return false;
+}
+
 function app_launch_handler(request, response) {
   var trips = get_user_trips(request);
   if (trips.length == 0)
@@ -268,6 +286,23 @@ app.intent("explain_trip", {
     }
     
     response.say("You don't have a trip named " + trip_name + ".");
+  }
+);
+
+app.intent("delete_trip", {
+    "slots": {
+      "name": "AMAZON.LITERAL",
+    },
+    "utterances": ["delete trip named {-|trip_name}"]
+  },
+  async function(request, response) {
+    request.getSession().clear("add_trip");
+    response.shouldEndSession(false);
+    var trip_name = request.slot("trip_name");
+    if (remove_user_trip(request, trip_name))
+      response.say("I removed the trip named " + trip_name + ".");
+    else
+      response.say("You don't have a trip named " + trip_name + ".");
   }
 );
 

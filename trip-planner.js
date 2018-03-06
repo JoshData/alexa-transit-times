@@ -855,6 +855,7 @@ exports.compute_routes = async function(start_address, end_address) {
   // Calculate routes.
   var routes = await calculate_routes(start.coord, end.coord);
   return {
+    v: 1,
     start: start,
     end: end,
     routes: routes,
