@@ -94,8 +94,9 @@ function app_launch_handler(request, response) {
   else
     response.say(
         "You have " + trips.length + " trip" + (trips.length != 1 ? "s" : "") + " stored. "
-      + "You can add list trips, get next transit times by saying check get times to " + trips[0].name + " or check times to " + trips[0].name + ". "
-      + "To add a trip, say 'add a trip named' and give it a name. "
+      + "You can get next transit times by saying get times to " + trips[0].name + " or check times to " + trips[0].name + ". "
+      + "To add a trip, say 'add a trip named work' or give it another name. "
+      + "You can also list trips or get more information about your saved trips. "
       + "Say stop or cancel to exit this skill.")
   response.shouldEndSession(false);
 }
@@ -215,7 +216,10 @@ app.intent("do_trip", {
   async function(request, response) {
     request.getSession().clear("add_trip");
 
-    if (request.type() == "IntentRequest")
+    // If this is combined with the invocation name,
+    // end the session right after. Otherwise keep the
+    // session open.
+    if (!request.isSessionNew)
       response.shouldEndSession(false);
 
     // Is this name the name of a trip?

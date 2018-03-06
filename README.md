@@ -33,5 +33,11 @@ Examples:
 
 	(At Union Station, a Red Line arrives in 5 minutes...)
 
+	Stop.
+
+	(app closes)
+
+	Ask public transit for times to work.
+
 Logo uses the images [Train by Michael Zenaty from the Noun Project](https://thenounproject.com/search/?q=train&i=21833#_=_) and [Bus by Jens Tärning from the Noun Project](https://thenounproject.com/search/?q=bus&i=386494).
 
