@@ -845,7 +845,7 @@ exports.get_upcoming_trips = async function(start_address, end_address) {
   return {
     start: start,
     end: end,
-    trips: trips,
+    routes: trips,
   };
 }
 
