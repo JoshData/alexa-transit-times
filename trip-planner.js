@@ -896,39 +896,8 @@ exports.get_predictions = async function(trip) {
 }
 
 async function do_demo() {
-  var addr1 = process.argv[2];
-  var addr2 = process.argv[3];
-
-  var geocode_results = await geocode([addr1, addr2]);
-  geocode_results = geocode_results.map(function(item) {
-    return {
-      name: item.results[0].formatted_address,
-      coord: [item.results[0].location.lat, item.results[0].location.lng],
-    };
-  })
-  start = geocode_results[0];
-  end = geocode_results[1];
-
-  console.log(
-    start.name, "to", end.name,
-    "(" + (parseInt(geodist({ lat: start.coord[0], lon: start.coord[1] },
-                     { lat: end.coord[0], lon: end.coord[1] },
-                     { unit: "miles", exact: true })*10)/10) + " miles)",
-    "...")
-
-  var routes = await calculate_routes(start.coord, end.coord);
-  console.log("Found", routes.length, "routes.");
-
-  for (var i = 0; i < routes.length; i++) {
-    var route = shallow_clone(routes[i]);
-    var expl = await explain_route(route);
-    console.log(expl);
-  }
-
-  routes = await get_trip_predictions(routes);
-
-  routes.forEach(function(trip) {
-    //console.log(trip);
+  var trip = await exports.get_upcoming_trips(process.argv[2], process.argv[3]);
+  trip.routes.forEach(function(trip) {
     console.log("At", trip.start_stop.name,
                 "a", trip.route_name_long,
                 "is arriving in", trip.arrival, "minutes",
