@@ -119,7 +119,7 @@ function app_launch_handler(request, response) {
   else
     response.say(
         "You have " + trips.length + " trip" + (trips.length != 1 ? "s" : "") + " stored. "
-      + "You can get next transit times by saying get times to " + trips[0].name + " or check times to " + trips[0].name + ". "
+      + "You can get next transit times by saying check times to " + trips[0].name + ". "
       + "To add a trip, say 'add a trip named work' or give it another name. "
       + "You can also list trips or get more information about your saved trips. "
       + "Say stop or cancel to exit this skill.")
@@ -165,8 +165,8 @@ app.intent("list_trips", { }, function(request, response) {
     text += trip.name + ", ";
   })
   text += ". "
-  text += "Say 'tell me about '" + trips[0].name + "' for more information. "
-  text += "Or 'remove trip named '" + trips[0].name + "' to remove it. "
+  text += "Say \"tell me about '" + trips[0].name + "'\" for more information. "
+  text += "Or \"remove trip named '" + trips[0].name + "'\" to remove it. "
 
   response.card({
     type: "Simple",
