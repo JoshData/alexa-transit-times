@@ -24,10 +24,6 @@ function make_address(request, prefix) {
 // Format prediction response.
 function say_predictions(tripinfo, response, options) {
   var text = "";
-
-  if (options.restate_addresses)
-    text += " You asked for times for trips from " + tripinfo.start.name + " and going to " + tripinfo.end.name + ". ";
-
   var count = 0;
   var last_stop = null;
   var seen_modalities = { };
@@ -42,6 +38,7 @@ function say_predictions(tripinfo, response, options) {
     text += "a " + trip.route_name_short + " arrives in " + trip.arrival + " minutes. ";
     if (trip.transfer_stop)
       text += "Transfer at " + trip.transfer_stop.name + " to the " + trip.transfer_route.short_name + ". ";
+    text += "\n\n";
     last_stop = trip.start_stop.name;
     count++;
     seen_modalities[trip.route.modality] = true;
@@ -51,6 +48,16 @@ function say_predictions(tripinfo, response, options) {
     response.say("I couldn't find any upcoming busses or trains.");
     return;
   }
+
+  response.card({
+    type: "Simple",
+    title: tripinfo.start.name + " to " + tripinfo.end.name,
+    content: text,
+  });
+
+  if (options.restate_addresses)
+    text = "You asked for times for trips from " + tripinfo.start.name + " and going to " + tripinfo.end.name + ". "
+      + text;
 
   response.say(text);
 }
@@ -160,6 +167,13 @@ app.intent("list_trips", { }, function(request, response) {
   text += ". "
   text += "Say 'tell me about '" + trips[0].name + "' for more information. "
   text += "Or 'remove trip named '" + trips[0].name + "' to remove it. "
+
+  response.card({
+    type: "Simple",
+    title: "Stored Trips",
+    content: text,
+  });
+
   response.say(text);
 })
 
@@ -219,8 +233,16 @@ app.intent("address", {
       // Store in session.
       add_user_trip(request, trip);
 
-      response.say("I've added a trip named " + trip.name + " from " + trip.start.name + " to " + trip.end.name + " with " + trip.routes.length + " routes."
+      var text = ("I've added a trip named " + trip.name + " from " + trip.start.name + " to " + trip.end.name + " with " + trip.routes.length + " routes."
         + " To get the times, say 'check times to " + trip.name + "'.");
+
+      response.say(text);
+
+      response.card({
+        type: "Simple",
+        title: "Added Trip",
+        content: text,
+      });
     }
 
     response.shouldEndSession(false);
@@ -281,6 +303,11 @@ app.intent("explain_trip", {
           text += await trip_planner.explain_route(trips[i].routes[j]) + " ";
         };
         response.say(text);
+        response.card({
+          type: "Simple",
+          title: "Your trip named " + trip_name,
+          content: text,
+        });
         return;
       }
     }
