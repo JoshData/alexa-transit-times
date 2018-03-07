@@ -185,9 +185,13 @@ app.intent("add_trip", {
   },
   function(request, response) {
     // Start a new conversation to add a trip with the given name.
-    request.getSession().set("add_trip", { name: request.slot("trip_name") });
     response.shouldEndSession(false);
-    response.say("What is the address of where you're leaving from when you go to " + request.slot("trip_name") + "? Say the street, city, and state.");
+    if (!request.slot("trip_name")) {
+      response.say("Sorry, I couldn't understand the name you gave for the trip. Please try again.");
+      return;
+    }
+    request.getSession().set("add_trip", { name: request.slot("trip_name") });
+    response.say("What is the address of where you're leaving from when you go to " + request.slot("trip_name") + "? Say the street address, city, and state.");
   }
 );
 
@@ -210,7 +214,7 @@ app.intent("address", {
     if (!state.from_address) {
       state.from_address = make_address(request, "address");
       request.getSession().set("add_trip", state);
-      response.say("And what is the address of where you're going to when you go to " + state.name + "? Say a street, city, and state.");
+      response.say("And what is the address of where you're going to when you go to " + state.name + "? Say the street address, city, and state.");
     } else {
       request.getSession().clear("add_trip");
 
