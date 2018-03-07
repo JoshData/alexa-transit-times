@@ -39,6 +39,31 @@ Here is an example dialog between you and your Echo that shows how you can use t
 >
 > *At MASSACHUSETTS avenue northwest and G street northwest a 96 arrives in 7 minutes. Then a 96 arrives in 23 minutes.*
 
+## Trip management
+
+After adding one or more trips, you can list, remove, or learn more about your saved trips.
+
+> Alexa, open public transit.
+>
+> *You have 1 trip stored. You can get next transit times by saying get times to "work." To add a trip, say "add a trip named work" or give it another name. You can also list trips or get more information about your saved trips. Say stop or cancel to exit this skill.*
+>
+> List trips.
+>
+> *You have 1 trip: "work." Say "tell me about work" for more information. Or "remove trip named work" to remove it.*
+>
+> Tell me about work.
+>
+> *"work" is your trip from 25 Massachusetts Ave NW, Washington, DC 20001 to 3001 Connecticut Ave NW, Washington, DC 20008. A Red Line train at Union Station takes you to Woodley Park with a total travel time of 34 minutes with about 22 minutes of walking. A 96 bus going WEST toward TENLEYTOWN STATION at MASSACHUSETTS avenue northwest and G street northwest takes you to CATHEDRAL avenue northwest and 29TH street northwest with a total travel time of 43 minutes with about 9 minutes of walking....*
+>
+> Remove trip named work.
+>
+> *I removed the trip named work.*
+>
+> Stop.
+>
+> _skill exits_
+
+
 ## Privacy policy and terms of use
 
 ### Privacy Policy
