@@ -313,12 +313,12 @@ app.intent("explain_trip", {
     response.shouldEndSession(false);
     await do_for_trip_by_name(request, response, async function(trip) {
         var text = trip.name + " is your trip from "
-          + trips[i].start.name + " to " + trips[i].end.name + ". ";
-        trips[i].routes.sort(function(a, b) {
+          + trip.start.name + " to " + trip.end.name + ". ";
+        trip.routes.sort(function(a, b) {
           return (a.total_time - b.total_time);
         });
-        for (var j = 0; j < trips[i].routes.length; j++) {
-          text += await trip_planner.explain_route(trips[i].routes[j]) + " ";
+        for (var j = 0; j < trip.routes.length; j++) {
+          text += await trip_planner.explain_route(trip.routes[j]) + " ";
         };
         response.say(text);
         response.card({
