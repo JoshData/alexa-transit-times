@@ -874,8 +874,10 @@ exports.compute_routes = async function(start_address, end_address) {
 }
 
 async function explain_route(route) {
-  route = shallow_clone(route);
-  await refill_trip_metadata(route);
+  if (typeof route.route === "string") {
+    route = shallow_clone(route);
+    await refill_trip_metadata(route);
+  }
   return ("A " + route.route.long_name + " at " + route.start_stop.name
     + " takes you to " + route.end_stop.name
     + (route.transfer_stop ? (" with a transfer to the " + route.transfer_route.long_name
@@ -888,6 +890,38 @@ exports.explain_route = async function(route) {
   return await explain_route(route);
 }
 
+async function merge_similar_routes(routes) {
+  // Expand.
+  for (var i = 0; i < routes.length; i++) {
+    if (typeof routes[i].route === "string") {
+      routes[i] = shallow_clone(routes[i]);
+      await refill_trip_metadata(routes[i]);
+    }
+  }
+
+  // Merge.
+  var i = 1;
+  while (i < routes.length) {
+    if ( routes[i-1].start_stop.name == routes[i].start_stop.name
+      && (routes[i-1].transfer_stop&&routes[i-1].transfer_stop.name) == (routes[i].transfer_stop&&routes[i].transfer_stop.name)
+      && (routes[i-1].transfer_route&&routes[i-1].transfer_route.long_name) == (routes[i].transfer_route&&routes[i].transfer_route.long_name)
+      && routes[i-1].total_time == routes[i].total_time
+      ) {
+      // combine with i-1
+      routes[i-1].route.long_name += " or " + routes[i].route.long_name;
+      routes[i-1].route.short_name += " or " + routes[i].route.short_name;
+      // remove i
+      routes.splice(i, 1);
+    } else {
+      i++;
+    }
+  }
+}
+
+exports.merge_similar_routes = async function(routes) {
+  await merge_similar_routes(routes);
+}
+
 exports.get_predictions = async function(trip) {
   var routes = await get_trip_predictions(trip.routes);
   return {
@@ -898,7 +932,10 @@ exports.get_predictions = async function(trip) {
 }
 
 async function do_demo() {
+  // Compute the route and get next vehicle predictions.
   var trip = await exports.get_upcoming_trips(process.argv[2], process.argv[3]);
+
+  // List the next vehicle times.
   trip.routes.forEach(function(trip) {
     console.log("At", trip.start_stop.name,
                 "a", trip.route_name_long,
@@ -908,7 +945,14 @@ async function do_demo() {
                 "with an ETA of", parseInt(trip.total_time), "minutes",
                 "(" + parseInt(trip.walking_time), "min. walking)",
                 );
-  })
+  });
+
+  // Show route explanations.
+  console.log()
+  await merge_similar_routes(trip.routes);
+  for (var i = 0; i < trip.routes.length; i++) {
+    console.log(await explain_route(trip.routes[i]));
+  }  
 }
 
 // Hmm, async...

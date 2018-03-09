@@ -312,14 +312,25 @@ app.intent("explain_trip", {
     request.getSession().clear("add_trip");
     response.shouldEndSession(false);
     await do_for_trip_by_name(request, response, async function(trip) {
+    	// Intro.
         var text = trip.name + " is your trip from "
           + trip.start.name + " to " + trip.end.name + ". ";
+
+        // List in order of total travel time to destination.
         trip.routes.sort(function(a, b) {
           return (a.total_time - b.total_time);
         });
+
+        // Combine similar entries. There are often multiple routes
+        // that start and end at the same stop.
+        await trip_planner.merge_similar_routes(trip.routes);
+
+        // List.
         for (var j = 0; j < trip.routes.length; j++) {
           text += await trip_planner.explain_route(trip.routes[j]) + " ";
         };
+
+        // Emit.
         response.say(text);
         response.card({
           type: "Simple",
