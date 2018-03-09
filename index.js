@@ -253,6 +253,32 @@ app.intent("address", {
   }
 );
 
+function do_for_trip_by_name(request, response, cb) {
+  // Get the user's trips.
+  var trips = get_user_trips(request);
+  var trip_name = request.slot("trip_name");
+
+  // If Amazon didn't understand the trip name return an
+  // error, unless there's exactly one trip in which case
+  // we ignore the name.
+  if (!trip_name && trips.length != 1) {
+    response.say("Sorry, I couldn't understand the name you gave for the trip. Please try again.");
+    return;
+  }
+
+  // Is this name the name of a trip? If there is only one
+  // trip stored, assume the user asked for that one, in case
+  // Amazon didn't do speech recognition too great.
+  for (var i = 0; i < trips.length; i++) {
+    if (trips[i].name == trip_name || trips.length == 1) {
+      cb(trips[i]);
+      return;
+    }
+  }
+  
+  response.say("You don't have a trip named " + trip_name + ".");  
+}
+
 app.intent("do_trip", {
     "slots": {
       "name": "AMAZON.LITERAL",
@@ -268,18 +294,11 @@ app.intent("do_trip", {
     if (!request.isSessionNew)
       response.shouldEndSession(false);
 
-    // Is this name the name of a trip?
-    var trip_name = request.slot("trip_name");
-    var trips = get_user_trips(request);
-    for (var i = 0; i < trips.length; i++) {
-      if (trips[i].name == trip_name) {
-        var predictions = await trip_planner.get_predictions(trips[i]);
-        say_predictions(predictions, response, {});
-        return;
-      }
-    }
-    
-    response.say("You don't have a trip named " + trip_name + ".");
+    do_for_trip_by_name(request, response, function(trip) {
+      var predictions = await trip_planner.get_predictions(trip);
+      say_predictions(predictions, response, {});
+      return;      
+    })
   }
 );
 
@@ -292,12 +311,7 @@ app.intent("explain_trip", {
   async function(request, response) {
     request.getSession().clear("add_trip");
     response.shouldEndSession(false);
-
-    // Is this name the name of a trip?
-    var trip_name = request.slot("trip_name");
-    var trips = get_user_trips(request);
-    for (var i = 0; i < trips.length; i++) {
-      if (trips[i].name == trip_name) {
+    do_for_trip_by_name(request, response, function(trip) {
         var text = trip_name + " is your trip from "
           + trips[i].start.name + " to " + trips[i].end.name + ". ";
         trips[i].routes.sort(function(a, b) {
@@ -312,11 +326,7 @@ app.intent("explain_trip", {
           title: "Your trip named " + trip_name,
           content: text,
         });
-        return;
-      }
-    }
-    
-    response.say("You don't have a trip named " + trip_name + ".");
+    });
   }
 );
 
@@ -338,12 +348,15 @@ app.intent("delete_trip", {
 );
 
 async function stop_cancel_intent_handler(request, response) {
+  // If the session is in the middle of adding a trip,
+  // then break out to just the waiting state.
   if (request.getSession().get("add_trip")) {
     request.getSession().clear("add_trip");
     app_launch_handler(request, response);
     return;
   }
 
+  // If we're in the waiting state, then exit the app.
   response.say("Doors closing!");
 }
 
