@@ -447,13 +447,13 @@ function simple_distance_squared(p1, p2) {
 }
 
 function walking_time(p1, p2) {
-  // Return the estimated walking time in minutes between two points
-  // at 35 minutes per mile, since an average walking seep is 20 minutes
-  // per mile but this is a straight line distance so assume the
-  // best route is >50% longer.
+  // Return the estimated walking time in minutes between two points.
+  // An average walking pace is 20 minutes per mile, but a straight
+  // line route from p1 to p2 may not be possible, so add a 50%
+  // factor to account for street grids, traffic lights, etc.
   return geodist({ lat: p1[0], lon: p1[1] },
                  { lat: p2[0], lon: p2[1] },
-                 { unit: "miles", exact: true }) * 35; // 35 minute mile
+                 { unit: "miles", exact: true }) * 30; // 30 minute mile
 }
 
 function est_transit_time(s1, s2) {
@@ -788,10 +788,12 @@ async function get_trip_predictions(trips) {
     var preds = await getRoutePredictions(trip.route, trip.start_stop, trip.transfer_stop || trip.end_stop, cached_predictions);
     var added_any_runs = false;
     preds.forEach(function(pred) {
-      // Skip if the user can't walk there in time. Add an extra
-      // buffer minute since the user has to listen to our response
-      // and leave the house.
-      if (pred.time < trip.start_walking_time + 1)
+      // Skip if the user can't walk there in time. Our walk
+      // time estimate is pretty rough, and we don't want to
+      // not tell the user about a possible next trip that
+      // they can actually make. So factor the walking time
+      // down.
+      if (pred.time < .75*trip.start_walking_time)
         return;
 
       // Return this trip.
