@@ -294,7 +294,7 @@ app.intent("do_trip", {
     if (!request.isSessionNew)
       response.shouldEndSession(false);
 
-    do_for_trip_by_name(request, response, async function(trip) {
+    await do_for_trip_by_name(request, response, async function(trip) {
       var predictions = await trip_planner.get_predictions(trip);
       say_predictions(predictions, response, {});
       return;      
@@ -311,7 +311,7 @@ app.intent("explain_trip", {
   async function(request, response) {
     request.getSession().clear("add_trip");
     response.shouldEndSession(false);
-    do_for_trip_by_name(request, response, async function(trip) {
+    await do_for_trip_by_name(request, response, async function(trip) {
         var text = trip_name + " is your trip from "
           + trips[i].start.name + " to " + trips[i].end.name + ". ";
         trips[i].routes.sort(function(a, b) {
