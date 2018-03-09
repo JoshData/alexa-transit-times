@@ -312,7 +312,7 @@ app.intent("explain_trip", {
     request.getSession().clear("add_trip");
     response.shouldEndSession(false);
     await do_for_trip_by_name(request, response, async function(trip) {
-        var text = trip_name + " is your trip from "
+        var text = trip.name + " is your trip from "
           + trips[i].start.name + " to " + trips[i].end.name + ". ";
         trips[i].routes.sort(function(a, b) {
           return (a.total_time - b.total_time);
@@ -323,7 +323,7 @@ app.intent("explain_trip", {
         response.say(text);
         response.card({
           type: "Simple",
-          title: "Your trip named " + trip_name,
+          title: "Your trip named " + trip.name,
           content: text,
         });
     });
