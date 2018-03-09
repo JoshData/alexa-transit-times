@@ -253,7 +253,7 @@ app.intent("address", {
   }
 );
 
-function do_for_trip_by_name(request, response, cb) {
+async function do_for_trip_by_name(request, response, cb) {
   // Get the user's trips.
   var trips = get_user_trips(request);
   var trip_name = request.slot("trip_name");
@@ -271,7 +271,7 @@ function do_for_trip_by_name(request, response, cb) {
   // Amazon didn't do speech recognition too great.
   for (var i = 0; i < trips.length; i++) {
     if (trips[i].name == trip_name || trips.length == 1) {
-      cb(trips[i]);
+      await cb(trips[i]);
       return;
     }
   }
@@ -294,7 +294,7 @@ app.intent("do_trip", {
     if (!request.isSessionNew)
       response.shouldEndSession(false);
 
-    do_for_trip_by_name(request, response, function(trip) {
+    do_for_trip_by_name(request, response, async function(trip) {
       var predictions = await trip_planner.get_predictions(trip);
       say_predictions(predictions, response, {});
       return;      
@@ -311,7 +311,7 @@ app.intent("explain_trip", {
   async function(request, response) {
     request.getSession().clear("add_trip");
     response.shouldEndSession(false);
-    do_for_trip_by_name(request, response, function(trip) {
+    do_for_trip_by_name(request, response, async function(trip) {
         var text = trip_name + " is your trip from "
           + trips[i].start.name + " to " + trips[i].end.name + ". ";
         trips[i].routes.sort(function(a, b) {
