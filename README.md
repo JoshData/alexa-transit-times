@@ -39,6 +39,8 @@ Here is an example dialog between you and your Echo that shows how you can use t
 >
 > *At MASSACHUSETTS avenue northwest and G street northwest a 96 arrives in 7 minutes. Then a 96 arrives in 23 minutes.*
 
+The skill looks for and saves the best routes for your trip at the time you add the trip. If there are relevant bus routes that aren't running when you add the trip, they won't be listed for you when you ask the skill for the next arrival times.
+
 ## Trip management
 
 After adding one or more trips, you can list, remove, or learn more about your saved trips.
@@ -79,6 +81,15 @@ WMATA Transit information provided by this skill is subject to change without no
 ## Skill development
 
 This skill is open source. To try it out yourself, you can get the source code from this repository.
+
+	git clone https://github.com/JoshData/alexa-transit-times
+	cd alexa-transit-times
+	npm install
+
+Create a file named `api_keys.txt` containing:
+
+	wmata=YOUR WMATA API KEY
+	geocodio=YOUR GEOCOD.IO API KEY
 
 To try out the trip planning functionality from the command-line, you can run:
 

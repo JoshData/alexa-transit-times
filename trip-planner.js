@@ -154,9 +154,9 @@ async function load_wmata_metro_rail() {
   // Get line, station, and entrances. The entrances are
   // our 'stops'. Lines become both "routegroups" and a
   // single actual route within the routegroup.
-  var wmata_rail_lines = await wmata_api('/Rail.svc/json/jLines', {}, true);
-  var wmata_rail_entrances = await wmata_api('/Rail.svc/json/jStationEntrances', {}, true);
-  var wmata_rail_stations = await wmata_api('/Rail.svc/json/jStations', {}, true);
+  const wmata_rail_lines = await wmata_api('/Rail.svc/json/jLines', {}, true);
+  const wmata_rail_entrances = await wmata_api('/Rail.svc/json/jStationEntrances', {}, true);
+  const wmata_rail_stations = await wmata_api('/Rail.svc/json/jStations', {}, true);
   var line_names = { };
   wmata_rail_lines.Lines.forEach(function(line_data) {
     line_names[line_data.LineCode] = line_data.DisplayName + " Line";
@@ -958,9 +958,14 @@ async function do_demo() {
 // Hmm, async...
 load_initial_data()
   .then(function() {
-
-  if (process.argv[1] && /trip-planner/.test(process.argv[1]))
-    do_demo();
-
-})
-
+    if (process.argv[1] && /trip-planner/.test(process.argv[1])) {
+      try {
+        do_demo();
+      } catch (err) {
+        console.log(err);
+      }
+    }
+  })
+  .catch(function(err) {
+    console.log("ERROR: Error loading initial data:", err);
+  });
