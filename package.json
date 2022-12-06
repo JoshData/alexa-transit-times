@@ -29,7 +29,7 @@
     "alexa-app": "^4.2.1",
     "async": "^2.6.0",
     "async-disk-cache": "^1.3.3",
-    "express": "^4.16.2",
+    "express": "^4.18.2",
     "geodist": "^0.2.1",
     "moment": "^2.21.0",
     "moment-timezone": "^0.5.14",
